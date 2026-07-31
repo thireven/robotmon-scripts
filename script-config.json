@@ -32,7 +32,7 @@
       "id": "com.r2studio.TsumBeta",
       "title": "Disney Tsum Tsum",
       "versionCode": 84,
-      "description": "<b style='color: #2196f3;'>\uD83D\uDD16 版本 v84</b>\n<ul>\n    <li>\n        新增選項「處理長技能動畫」，修正長技能動畫時誤判遊戲結束\n        <br>\n        New optional setting \"Handle Long Skill Animations\": fixes a false game over during long skill animations.\n    </li>\n</ul>",
+      "description": "<b style='color: #2196f3;'>\uD83D\uDD16 版本 v84</b>\n<ul>\n<li>\n修正自動解鎖,新增最大連鎖數\n<br>\nFix auto unlock level up, add max chain setting for maleficent type tsum to run in higher fps.\n</li>\n</ul>",
       "packageName": "com.linecorp.LGTMTMG",
       "downloadURL": "https://github.com/r2-studio/robotmon-scripts/raw/master/scripts/com.r2studio.TsumBeta/index.zip",
       "dependencies": [],
