@@ -1101,6 +1101,13 @@ Tsum.prototype.useSkill = function(board) {
     // board-scan cycle picks it up one cycle later, which costs nothing like
     // as much.
     return false;
+  } else if (this.skillType === 'block_formal_beast_s'){
+    this.useFormalBeastSkill();
+    // Same reason as Tiara Minnie+ above: the caller runs `while (useSkill())`
+    // and the gauge still reads active through the outro, so reporting a fire
+    // here buys another whole window of choreography against a board that is
+    // no longer Beast and Belle.
+    return false;
   } else if (this.skillType === 'block_lightning_mcqueen_plus_s'){
     this.sleep(2000);
     for (i = 1; i <= 20; i+=1) {
@@ -1619,6 +1626,326 @@ Tsum.prototype.useTiaraMinniePlusSkill = function() {
       'score ' + pick.score.toFixed(2), 'margin ' + pick.margin.toFixed(2),
       'layout ' + pick.count, 'total ' + (Date.now() - started) + 'ms');
   return 1;
+};
+
+// ---------------------------------------------------------------------------
+// Formal Beast
+//
+// FormalBeastConfig has the mechanic; FormalBeastGauge has the gauge geometry
+// and the measurements behind it. The round is: bring both gauges up to just
+// short of full, always working whichever one is behind, then tip one over and
+// let its blast carry the other past the line for the big animation. On a
+// two-colour board the chains are long enough that a round costs only a few
+// seconds, so the window usually fits two or three of them; the loop keeps going
+// until the level table says the window is done or the gauge leaves the screen.
+//
+// Every decision here is made against the gauges as read, so a misjudged link,
+// a drag the game did not register, or a wrong guess at how many tsums fill a
+// bar all correct themselves on the next read instead of accumulating.
+// ---------------------------------------------------------------------------
+
+Tsum.prototype.beastDurationMs = function() {
+  const level = Math.max(1, Math.min(6, this.skillLevel || 1));
+  return FormalBeastConfig.durationMs[level];
+};
+
+// One read of both gauges: {fill: [beast, belle], empty: bool, full: bool}.
+//
+// Costs a single strip grab, roughly a tenth the area of a board scan, so this
+// is affordable on every pass round the loop -- which is what lets everything
+// else be a correction rather than a commitment.
+Tsum.prototype.beastReadGauges = function() {
+  const g = FormalBeastGauge;
+  // Clamped so a letterboxed screen (gameOffsetX/Y > 0) cannot ask for a crop
+  // starting off the display. Probes that then fall outside the crop are simply
+  // not read, rather than being counted as anything.
+  const raw = this.toRealXY(g.cropX, g.cropY);
+  const origin = {x: Math.max(0, raw.x), y: Math.max(0, raw.y)};
+  const w = Math.max(1, Math.min(this.originScreenWidth - origin.x,
+                                 Math.round(g.cropW * this.captureGameRatio)));
+  const h = Math.max(1, Math.min(this.originScreenHeight - origin.y,
+                                 Math.round(g.cropH * this.captureGameRatio)));
+  const span = Math.max(1, Math.round(g.probeSpan * this.captureGameRatio));
+  const img = getScreenshotModify(origin.x, origin.y, w, h, w, h, 100);
+  try {
+    const fill = [0, 0];
+    let dark = 0, total = 0, lit = 0;
+    const bars = [g.beastProbes, g.belleProbes];
+    for (let b = 0; b < 2; b++) {
+      const probes = bars[b];
+      let filled = 0, read = 0;
+      for (let i = 0; i < probes.length; i++) {
+        const p = this.toRealXYs(probes[i]);
+        const px = p.x - origin.x;
+        // Three points across the track's thickness, darkest wins: a probe that
+        // has drifted onto the bright chrome beside the track would otherwise
+        // read as filled. See FormalBeastGauge.probeSpan.
+        let v = -1;
+        for (let d = -1; d <= 1; d++) {
+          const py = p.y - origin.y + d * span;
+          if (px < 0 || py < 0 || px >= w || py >= h) { continue; }
+          const c = getImageColor(img, px, py);
+          const mx = c.r > c.g ? (c.r > c.b ? c.r : c.b) : (c.g > c.b ? c.g : c.b);
+          if (v < 0 || mx < v) { v = mx; }
+        }
+        if (v < 0) { continue; }  // wholly outside the crop
+        read++;
+        total++;
+        if (v >= g.fillMinV) { filled++; lit++; }
+        if (v <= g.emptyMaxV) { dark++; }
+      }
+      fill[b] = read > 0 ? filled / read : 0;
+    }
+    // Is the chrome below the arc still visible? The activation poll runs
+    // through the skill's cut-in, and a dark animation over the screen would
+    // otherwise read as a gauge full of empty track.
+    let chrome = 0, chromeRead = 0;
+    for (let i = 0; i < g.chromeProbes.length; i++) {
+      const p = this.toRealXYs(g.chromeProbes[i]);
+      const px = p.x - origin.x, py = p.y - origin.y;
+      if (px < 0 || py < 0 || px >= w || py >= h) { continue; }
+      chromeRead++;
+      const c = getImageColor(img, px, py);
+      const mx = c.r > c.g ? (c.r > c.b ? c.r : c.b) : (c.g > c.b ? c.g : c.b);
+      if (mx >= g.chromeMinV) { chrome++; }
+    }
+    const chromeOk = chromeRead > 0 && chrome * 2 >= chromeRead;
+    return {
+      fill: fill,
+      chromeOk: chromeOk,
+      // Both gauges empty against visible chrome -- exactly the state at
+      // activation, and nothing else on this screen is anywhere near as dark
+      // along that curve.
+      empty: chromeOk && total > 0 && dark / total >= g.emptyMinFrac,
+      // Every probe lit. A real double-full fires at once and comes back reset,
+      // so this persisting means the gauge has gone rather than filled.
+      full: total > 0 && lit === total
+    };
+  } finally {
+    releaseImage(img);
+  }
+};
+
+// Re-measure how many erasures a full bar takes, from what the gauge actually
+// did. Only used as a step size, and only updated when the move was big enough
+// to measure against the gauge's own resolution (one probe is 1/18 of a bar).
+Tsum.prototype.beastLearn = function(linked, delta) {
+  const cfg = FormalBeastConfig;
+  if (delta < cfg.learnMinDelta || linked < cfg.minChain) { return; }
+  const seen = linked / delta;
+  this._beastTsumsPerBar = (1 - cfg.learnWeight) * this._beastTsumsPerBar + cfg.learnWeight * seen;
+  if (this.debug) {
+    console.log('[FormalBeast] ' + linked + ' tsums moved the bar ' + delta.toFixed(2)
+      + ' -> ' + seen.toFixed(1) + ' per bar, running ' + this._beastTsumsPerBar.toFixed(1));
+  }
+};
+
+// One board read inside the window, split into Beast (slot 0, the blue gauge
+// over the skill button) and Belle (slot 1, the gold gauge over the fan).
+//
+// Split on hue alone, not through classifyTsums. Beast glows blue and Belle
+// gold, and after the scan's blur every tsum carries some of its neighbours'
+// aura, so the board comes out as a continuous ramp between the two rather than
+// as two clusters -- which is exactly what a merge-distance clusterer cannot
+// handle, and what a threshold does not care about. See FormalBeastConfig.
+Tsum.prototype.beastScan = function() {
+  const cfg = FormalBeastConfig;
+  const img = this.playScreenshotSquare();
+  try {
+    const points = findTsums(img);
+    if (points.length === 0) { return null; }
+    const board = [[], []];
+    let matched = 0;
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      // findTsums samples the blurred HSV image, so b/g/r hold H/S/V.
+      if (p.r < cfg.boardMinV || p.b < cfg.hueMin || p.b > cfg.hueMax) { continue; }
+      const slot = p.b >= cfg.hueSplit ? 0 : 1;
+      board[slot].push({tsumIdx: 0,
+                        x: p.x - (Config.tsumWidth / 2),
+                        y: p.y - (Config.tsumWidth / 2)});
+      matched++;
+    }
+    return {board: board, points: points.length, matched: matched};
+  } finally {
+    releaseImage(img);
+  }
+};
+
+// Chains available for each character, longest first. calculatePaths only ever
+// compares within one tsumIdx, so the two colours go through it as separate
+// boards rather than being tagged and filtered afterwards.
+Tsum.prototype.beastPaths = function(scan) {
+  const out = [[], []];
+  for (let s = 0; s < 2; s++) {
+    if (scan.board[s].length >= FormalBeastConfig.minChain) {
+      out[s] = calculatePaths(scan.board[s], this.logs, -1, false);
+    }
+  }
+  return out;
+};
+
+Tsum.prototype.useFormalBeastSkill = function() {
+  const cfg = FormalBeastConfig;
+  const started = Date.now();
+  this._beastTsumsPerBar = cfg.tsumsPerBar;
+  // gameSkill1 has already been tapped by useSkill; the cut-in and the board
+  // swap play before there is anything to link.
+  this.sleep(cfg.activateLeadMs);
+
+  // Two empty gauges against visible chrome is the activation signature, so the
+  // same read says both "the skill fired" and "the board is ready". Polled
+  // rather than waited out: how long the cut-in takes is not worth guessing
+  // when the answer is this cheap to ask for.
+  let gauge = null;
+  const giveUp = Date.now() + cfg.activateWaitMs;
+  while (this.isRunning) {
+    gauge = this.beastReadGauges();
+    if (gauge.empty) { break; }
+    gauge = null;
+    if (Date.now() >= giveUp) { break; }
+    this.sleep(cfg.activatePollMs);
+  }
+  if (gauge == null) {
+    // No gauge came up inside the budget: the skill did not go off. Leave the
+    // board to the play loop rather than spending the window dragging to no
+    // purpose. The wait is logged because it is the number to raise
+    // activateWaitMs against if this turns out to be a slow swap rather than a
+    // skill that never fired.
+    log(this.logs.beastNoBoard, 'waited ' + (Date.now() - started) + 'ms');
+    return;
+  }
+  // Measured from here rather than from the tap, since this is where the
+  // two-tsum board actually starts.
+  const deadline = Date.now() + this.beastDurationMs();
+  // Logged at normal level: this is the gap between tapping the skill and the
+  // board being playable, and everything before the first chain hangs off it.
+  log(this.logs.beastReady, (Date.now() - started) + 'ms after activation');
+  // The bars stay empty across this -- nothing has been linked yet -- so the
+  // read above is still good and the first pass round the loop goes straight
+  // to scanning.
+  this.sleep(cfg.activateSettleMs);
+  let rounds = 0, barren = 0, fullReads = 0;
+  let lastSlot = -1, lastLinked = 0, lastFill = 0;
+
+  while (this.isRunning && Date.now() < deadline) {
+    if (gauge == null) { gauge = this.beastReadGauges(); }
+    if (gauge.full) {
+      // Every probe lit on both bars. A genuine double-full fires at once and
+      // comes back reset, so this only persists once the gauge has left the
+      // screen -- which is the window being over ahead of the level table.
+      if (++fullReads >= cfg.endFullScans) { break; }
+      gauge = null;
+      this.sleep(cfg.retryMs);
+      continue;
+    }
+    fullReads = 0;
+
+    // What the last link actually did to its gauge, which is where the erasures
+    // -> bar conversion comes from.
+    if (lastSlot >= 0) {
+      this.beastLearn(lastLinked, gauge.fill[lastSlot] - lastFill);
+      lastSlot = -1;
+    }
+
+    const fill = gauge.fill;
+    const perBar = this._beastTsumsPerBar;
+    // A gauge is "held" once what is left of it is too little to link into
+    // without overshooting. Holding out for an exact landing would deadlock both
+    // gauges one short chain below the line.
+    const held = [(cfg.holdFrac - fill[0]) * perBar < cfg.minChain,
+                  (cfg.holdFrac - fill[1]) * perBar < cfg.minChain];
+    const tipping = held[0] && held[1];
+    // How many tsums each gauge still wants. Filling: up to the hold line.
+    // Tipping: over the top, with overshoot to cover the estimate being short.
+    const wants = [0, 0];
+    for (let s = 0; s < 2; s++) {
+      wants[s] = tipping
+        ? Math.ceil((1 - fill[s]) * perBar) + cfg.tipOvershoot
+        : (held[s] ? 0 : Math.round((cfg.holdFrac - fill[s]) * perBar));
+    }
+
+    const scan = this.beastScan();
+    gauge = null;  // linking below leaves this read stale
+    if (scan == null || scan.matched < cfg.minChain) {
+      if (++barren >= cfg.giveUpScans) { log(this.logs.beastStalled); break; }
+      this.sleep(cfg.retryMs);
+      continue;
+    }
+    const paths = this.beastPaths(scan);
+    const lens = [paths[0].length > 0 ? paths[0][0].length : 0,
+                  paths[1].length > 0 ? paths[1][0].length : 0];
+    const playable = [Math.min(lens[0], wants[0]) >= cfg.minChain,
+                      Math.min(lens[1], wants[1]) >= cfg.minChain];
+    let slot = -1;
+    if (playable[0] && playable[1]) {
+      // Filling: work whichever gauge is further behind, so the two arrive
+      // together. Tipping: fire whichever is nearer the line, so the least goes
+      // into the gauge that goes off and the most is left standing in the one
+      // the blast has to finish.
+      slot = tipping ? (fill[0] >= fill[1] ? 0 : 1)
+                     : (fill[0] <= fill[1] ? 0 : 1);
+    } else if (playable[0]) {
+      slot = 0;
+    } else if (playable[1]) {
+      slot = 1;
+    }
+    if (slot < 0) {
+      if (++barren >= cfg.giveUpScans) { log(this.logs.beastStalled); break; }
+      this.sleep(cfg.retryMs);
+      continue;
+    }
+    barren = 0;
+
+    const n = Math.min(lens[slot], wants[slot]);
+    if (tipping && this.debug) {
+      // Both gauges near full, just before either goes off -- the frame worth
+      // having for calibration. (Rate-limited to one every five minutes.)
+      this.saveDebugScreenshot('formalbeast');
+    }
+    // Truncating is what keeps a twenty-long chain from tipping a gauge on the
+    // first drag of the round. A prefix of a chain is still a chain, since the
+    // path walks from neighbour to neighbour, so the drag erases exactly n.
+    this.linkTsums(paths[slot][0].slice(0, n));
+    lastSlot = slot;
+    lastLinked = n;
+    lastFill = fill[slot];
+    if (this.debug) {
+      console.log('[FormalBeast] ' + (slot === 0 ? 'Beast' : 'Belle') + ' +' + n + ' of ' + lens[slot]
+        + '  gauges ' + fill[0].toFixed(2) + '/' + fill[1].toFixed(2)
+        + (tipping ? ' (tipping)' : ''));
+    }
+
+    // A link that should have taken a gauge over the top closes out the round.
+    // Only when the chain was long enough to expect it, because the board does
+    // not always offer one that long and running the tail below on a blast that
+    // never went off costs seconds of the window for nothing.
+    if (tipping && fill[slot] + n / perBar >= 1) {
+      rounds++;
+      log(this.logs.beastTipped, fill[0].toFixed(2) + '/' + fill[1].toFixed(2), 'round ' + rounds);
+      // The blast, the second gauge going off behind it, and the board dropping
+      // back in. Nothing is linkable or readable through any of it.
+      this.sleep(cfg.blastWaitMs);
+      // Then sweep for the magic bubbles the animation left, exactly as the
+      // sweep that closes Cpt Lightyear's choreography does. Inside this skill
+      // everything a bubble clears is Beast or Belle, so the clears go into the
+      // next round's gauges rather than only into the score.
+      this.clearAllBubbles(cfg.bubbleLeadMs, 0, cfg.bubbleFromY, cfg.bubbleRowMs);
+      // The gauges reset behind the animation and the bubbles moved them again
+      // without a link, so there is nothing here to learn a bar size from.
+      lastSlot = -1;
+    }
+  }
+
+  log(this.logs.beastEnded, rounds + ' round(s)',
+      'bar ~' + Math.round(this._beastTsumsPerBar) + ' tsums', (Date.now() - started) + 'ms');
+  // The chains here run to twenty, so the window leaves bubbles behind even
+  // where no round completed. The play loop only counts the ones its own links
+  // make, and this skill never goes through those.
+  if (this.clearBubbles) {
+    this.clearAllBubbles(0, 0, (Button.gameBubblesFrom.y + Button.gameBubblesTo.y) / 2,
+                         cfg.bubbleRowMs);
+  }
 };
 
 Tsum.prototype.sampleMyTsumColor = function() {

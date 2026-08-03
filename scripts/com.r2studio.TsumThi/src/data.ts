@@ -195,12 +195,24 @@ var GameBubbleConfig = {
   // Circle geometry in the 200px play-square space findTsums works in, where a
   // tsum is radius 8-14.
   //
-  // NOT YET CALIBRATED: there is no saved frame with a bubble on the board to
-  // measure against, so this range is reasoned from a bubble being noticeably
-  // larger than a tsum, not measured. Getting it wrong costs stray taps on bare
-  // board, which the game ignores -- a tap is not a drag, so nothing links.
-  minRadius: 16,
-  maxRadius: 30,
+  // The radius is now measured, off the two bubbles sitting on the board in
+  // doc/screenshots/FormalBeast. Both came out at radius 16.1 and 16.2, and
+  // both are unmistakable in the frame: a bubble is a pale *ring* 87x88px in a
+  // 540px play square, filling 0.12 of its own bounding box, where every other
+  // pale blob (tsum highlights) is at most 70px across and fills 0.40-0.54.
+  //
+  // So a bubble is about 1.3x a tsum's largest radius, not the "much bigger"
+  // this range was first reasoned from: it ran 16-30, which put the real radius
+  // exactly on the bottom edge and the top of the range at nearly double
+  // anything that exists. This brackets the measurement instead.
+  //
+  // param1/param2 are still NOT verified -- they are Hough's edge and
+  // accumulator thresholds and cannot be checked without running OpenCV against
+  // a frame. Getting them wrong costs stray taps on bare board, which the game
+  // ignores (a tap is not a drag, so nothing links), and the tap count is
+  // capped below.
+  minRadius: 12,
+  maxRadius: 21,
   minDist: 30,
   param1: 20,
   param2: 26,
@@ -210,6 +222,202 @@ var GameBubbleConfig = {
   minChainForPop: 4,
   maxTaps: 3,
   tapDuring: 10
+};
+
+// --- Formal Beast -------------------------------------------------------
+//
+// His skill replaces the whole board with just two tsums, Beast and Belle, for
+// a set stretch of time, and puts a gauge above each of the bottom buttons:
+// blue over the skill button for Beast, yellow over the fan button for Belle.
+// Erasing about 20 of a character fills that character's gauge. A gauge that
+// fills on its own sets off a small horizontal blast; a gauge that fills while
+// the other is also full sets off a far bigger one.
+//
+// So the play is not "erase as much as possible". It is to bring both gauges up
+// to just short of full, then tip one over: the small blast that tips it clears
+// a band across the board, and the tsums of the *other* character caught in that
+// band carry its gauge over the line too, which is what upgrades the animation.
+// That makes the whole skill a balancing act, and the thing to control is not
+// how much is erased but how much of *each* character is erased, and when.
+//
+// The gauges themselves are read, which makes them the ground truth for where
+// the round has got to, and they read very cleanly -- see FormalBeastGauge.
+//
+// A tally was tried first: count what is linked, since a drag erases exactly the
+// tsums it links and Tsum Tsum has no cascades, so a chain of nine is nine and
+// never ten. The arithmetic is exact, but it rests on knowing which character
+// each chain was, and it turns out the board scan cannot tell. Beast and Belle
+// glow blue and gold, the scan blurs each tsum together with its neighbours'
+// auras, and what comes out is a continuous hue ramp with no gap in it -- read
+// straight down one column of doc/screenshots/FormalBeast the hue runs
+// 90 95 98 101 91 80 68 54 39 32 25 22 22 28 37 44 57 72 85 98 102 without ever
+// settling. classifyTsums merges below distance3D 15, so it shatters each
+// character into four or more clusters: on the reference frames the two biggest
+// held 0.50-0.77 of the board where two clean colours would hold ~1.0.
+//
+// Reading the gauges steps around all of that, and takes with it the one number
+// that could not be calibrated at all -- how many erasures fill a bar. That is
+// now only a step size for deciding how much of a chain to link, it is measured
+// from the gauge as the window runs, and being wrong costs an extra iteration
+// rather than a wasted skill.
+//
+// What the character split is still needed for is choosing which of the two to
+// link next, and for that a plain hue split does work where clustering does not:
+// the two centres are far apart (Belle ~20, Beast ~100) even though the space
+// between them is filled in, and a split reproduced the visible board layout on
+// both reference frames.
+var FormalBeastConfig = {
+  // Hue (OpenCV 0..179) at or above which a tsum is Beast rather than Belle.
+  // Measured centres: Belle 18-45, Beast 85-105. Anything outside hueMin..hueMax
+  // is not a Formal Beast tsum at all.
+  hueSplit: 55,
+  hueMin: 8,
+  hueMax: 130,
+  // Below this the sample is a gap between tsums, not a face.
+  boardMinV: 100,
+
+  // Where the fill phase stops, as a share of the bar. Both gauges are brought
+  // here before either is tipped; what is left short is what the tipping blast
+  // has to supply for the second gauge. The reference frame catches a human
+  // playing this skill well with both bars at 0.83, which is where this sits.
+  holdFrac: 0.83,
+  // Linked past the estimated full point when tipping, so the gauge crosses the
+  // line even if the estimate is a little short. Not wasted: overshoot carries
+  // into the fresh gauge that comes back after the blast.
+  tipOvershoot: 3,
+  // A drag has to link three tsums to erase anything.
+  minChain: 3,
+
+  // Erasures per full bar. Only ever used to turn "this much bar still wanted"
+  // into "this many tsums to link", and re-measured from the gauge every time a
+  // link moves it far enough to measure (see beastLearn). Reported as about 20,
+  // which is where it starts.
+  tsumsPerBar: 20,
+  learnMinDelta: 0.11,
+  learnWeight: 0.3,
+
+  // How long the two-tsum board lasts, by skill level. Only level 6 is known
+  // (15s); the rest are a straight line down to 9s and want checking against the
+  // game. Being wrong is not fatal in either direction -- the loop also stops
+  // when the gauge leaves the screen -- it just leaves the tail of the window
+  // unused (too short) or spends a scan or two finding out (too long).
+  durationMs: {1: 9000, 2: 10200, 3: 11400, 4: 12600, 5: 13800, 6: 15000},
+
+  // Getting started. The cut-in and the board swap have to play out before
+  // there is anything to link, but how long that takes is not worth guessing:
+  // a gauge read is cheap and two empty gauges is exactly the signal that the
+  // board is ready, so this polls for it and starts the moment it appears
+  // instead of sitting out a fixed wait. (It did sit out a flat 1.6s, which was
+  // most of the delay before the first chain went out.)
+  activateLeadMs: 200,
+  activatePollMs: 60,
+  // Budget for the gauge to turn up, measured from the end of the lead. The
+  // cut-in and board swap take about three seconds on a real device, so this
+  // has to clear that with room to spare -- and it is only ever spent in full
+  // when the skill did not fire, because the poll leaves the moment the gauge
+  // appears. At 2500 it expired just before the swap finished, and the skill
+  // handed a live two-tsum board back to the ordinary play loop.
+  activateWaitMs: 6000,
+  // Once the gauge is up, a moment for the tsums to finish dropping in. The scan
+  // that follows takes longer than this again, so it only has to cover the tail
+  // of the swap.
+  activateSettleMs: 150,
+  // The blast, the second gauge going off behind it, and the board dropping back
+  // in. Nothing is linkable through any of it.
+  blastWaitMs: 1800,
+  // The big animation leaves magic bubbles behind, and clearAllBubbles sweeps
+  // for them at the end of the round's choreography -- the same shape as the
+  // sweep that closes Cpt Lightyear's, whose numbers these are.
+  //
+  // The pause between rows is the part that matters and the part that was
+  // missing: popping a bubble sets off a clear, and a rapid burst of taps
+  // through that clear does not register. The lead lets the animation finish
+  // putting the bubbles on the board first, and starting part-way down the
+  // board covers where they settle without paying for a full-board sweep.
+  bubbleLeadMs: 600,
+  bubbleFromY: 1000,
+  bubbleRowMs: 300,
+  // Between scans that found nothing to link -- nearly always tsums still
+  // falling, which is why this is short and just retried.
+  retryMs: 150,
+  giveUpScans: 8,
+
+  // Both bars reading full for this many reads running means the gauge has left
+  // the screen, not that both are genuinely full: a real double-full fires
+  // instantly and comes back reset. More than two, because the blast animation
+  // draws over the gauge on its way out.
+  endFullScans: 3
+};
+
+// --- Formal Beast gauge -------------------------------------------------
+//
+// The two bars are one curved track running across the screen just above the
+// skill and fan buttons, with a rose emblem at its centre. The left half is
+// Beast's and fills cyan from the left edge inward; the right half is Belle's
+// and fills gold from the right edge inward. The rose sits between them and is
+// not part of either.
+//
+// Reading it needs no search: the track is in a fixed place, so the probes below
+// are fixed points along its centreline, ordered from each bar's outer edge
+// inward. The fill fraction is just how many of them are lit.
+//
+// Everything here was measured off doc/screenshots/FormalBeast (540x960, so
+// logical = 2x), where the two frames are both gauges empty and both around
+// 83%. The states are about as far apart as anything in this script gets:
+//
+//   empty track      V 20-24     the bar's own unfilled groove
+//   filled segment   V 247-255   cyan or gold
+//   chrome around it V 173-255   never dark
+//
+// so a brightness threshold anywhere from ~60 to ~200 separates empty from
+// filled. Hue is not used for the fill test: gold fill measured saturation
+// 102-214, which overlaps the chrome, while brightness does not overlap at all.
+var FormalBeastGauge = {
+  // Strip grabbed for a read, in logical coordinates -- the probes plus room for
+  // probeSpan. Small enough that a read is far cheaper than a board scan.
+  cropX: 40,
+  cropY: 1460,
+  cropW: 1000,
+  cropH: 130,
+
+  // Each probe reads three points spanning the track's thickness and keeps the
+  // darkest. The track is only ~22 logical px thick, and a probe that drifts off
+  // it lands on bright chrome, which would read as filled -- taking the darkest
+  // means one sample still on the track is enough. Measured against the empty
+  // frame, this holds with no probe misread anywhere in -16..+16 logical px of
+  // drift, against -12..+10 reading a single point.
+  probeSpan: 6,
+  fillMinV: 120,
+  // Distinctly darker than the chrome (173+) and well above the track (20-24).
+  emptyMaxV: 70,
+  // Share of all probes that must read empty track for the skill to count as
+  // having fired. Both gauges are empty at activation, so this is a strong test:
+  // with no gauge on screen nothing along the curve is anywhere near this dark.
+  emptyMinFrac: 0.9,
+
+  // "All the probes went dark" is also what a dark full-screen animation looks
+  // like, and the activation poll runs straight through the skill's cut-in --
+  // so an empty gauge has to be dark track against *bright chrome*, not just
+  // dark. These sit in the band between the arc and the buttons, which is plain
+  // background: they read V 156-255 across both reference frames and are
+  // identical between them, so anything drawn over the screen takes them with it.
+  chromeProbes: [
+    {x: 200, y: 1580}, {x: 300, y: 1580}, {x: 400, y: 1580},
+    {x: 680, y: 1580}, {x: 780, y: 1580}, {x: 880, y: 1580}
+  ],
+  chromeMinV: 120,
+
+  // Centreline points, outer edge first. Logical 1080x1920.
+  beastProbes: [
+    {x: 74, y: 1486}, {x: 96, y: 1492}, {x: 116, y: 1498}, {x: 138, y: 1502}, {x: 160, y: 1506}, {x: 180, y: 1510},
+    {x: 202, y: 1514}, {x: 222, y: 1518}, {x: 244, y: 1522}, {x: 264, y: 1524}, {x: 286, y: 1528}, {x: 306, y: 1530},
+    {x: 328, y: 1532}, {x: 350, y: 1534}, {x: 370, y: 1536}, {x: 392, y: 1538}, {x: 412, y: 1540}, {x: 434, y: 1542}
+  ],
+  belleProbes: [
+    {x: 1004, y: 1488}, {x: 982, y: 1492}, {x: 962, y: 1498}, {x: 940, y: 1502}, {x: 920, y: 1506}, {x: 898, y: 1510},
+    {x: 878, y: 1514}, {x: 856, y: 1518}, {x: 836, y: 1522}, {x: 814, y: 1524}, {x: 794, y: 1528}, {x: 772, y: 1530},
+    {x: 752, y: 1532}, {x: 730, y: 1534}, {x: 710, y: 1536}, {x: 688, y: 1538}, {x: 668, y: 1540}, {x: 646, y: 1542}
+  ]
 };
 
 // Definitions assuming screen resolution of 1080 * 1920
