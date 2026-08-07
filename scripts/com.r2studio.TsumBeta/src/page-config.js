@@ -1,301 +1,4 @@
-// ============================TSUM=============================== //
-
-var Config: TsumConfig = {
-  recordDir: 'tsum_record',
-  tsumWidth: 16,
-  tsumBoundW: 13, // tsumWidth / 2 + 2
-  tsumBoundH: 13,
-  screenResize: 200,
-  gameContinueDelay: 400,
-  colors: [[255,0,0], [0,255,0], [0,0,255], [0,255,255], [255,0,255]],
-  debugLogs: false
-};
-
-// Top of the square play area in logical coordinates. The board occupies the
-// 1080x1080 square below this line; everything above is score/timer chrome.
-var PlayAreaTopY = 465;
-
-// --- Tiara Minnie+ ------------------------------------------------------
-//
-// Her skill shows Minnie with a thought bubble containing one present, then a
-// screen of presents to pick the matching one from. The bubble appears once per
-// activation and is not shown again, so an activation is exactly one pick. A
-// correct one adds a present to the next activation's screen (2 up to 6); a
-// wrong one resets it to 2 -- which is why every layout has to be handled, but
-// also why the count never needs to be tracked between activations.
-//
-// The presents always land on the same centres for a given count, so there is
-// nothing to search for: crop each known centre, crop the bubble, and compare
-// the pictures directly. Centres are logical 1080x1920 and were read off
-// doc/screenshots/TiaraMinnie/2..6.png (blob centres agreed within ~20px).
-var TiaraLayouts: { [n: number]: Point[] } = {
-  2: [{x: 292, y: 973},  {x: 781, y: 1059}],
-  3: [{x: 781, y: 829},  {x: 666, y: 1275}, {x: 306, y: 987}],
-  4: [{x: 292, y: 1232}, {x: 263, y: 829},  {x: 796, y: 757},  {x: 796, y: 1117}],
-  5: [{x: 234, y: 1117}, {x: 882, y: 1102}, {x: 292, y: 771},  {x: 839, y: 742},
-      {x: 551, y: 1304}],
-  6: [{x: 752, y: 757},  {x: 378, y: 728},  {x: 176, y: 973},  {x: 896, y: 1001},
-      {x: 349, y: 1232}, {x: 680, y: 1261}]
-};
-
-// Presents shrink as more of them appear; these are the crop sides that put the
-// present in the same fraction of the frame at every count (measured widths ran
-// 270/275/252/237/237 for counts 2..6).
-var TiaraSlotSide: { [n: number]: number } = {
-  2: 300, 3: 295, 4: 280, 5: 265, 6: 260
-};
-
-var TiaraMinnieConfig = {
-  // Resolution the play square is captured at for matching.
-  //
-  // Was briefly dropped to 300 for speed on the strength of the offline sweep
-  // finding 270-720 all scoring 20/20 -- and wrong taps appeared on the device.
-  // Do not lower it again without re-running the harness: the sweep varied this
-  // alone against static frames, which is not the same claim as "300 is safe",
-  // and a cell is only ~5.6 capture pixels wide there, so cell centres snap to
-  // the grid with a tenth of a cell of error and the blur has less to work with.
-  captureSize: 420,
-  // Blur radius, in capture pixels, that makes one pixel read stand in for the
-  // average of its cell -- so it has to stay in proportion to captureSize.
-  captureBlur: 7,
-
-  // The thought bubble is drawn at a fixed spot, so the template is a fixed
-  // crop -- no searching. Verified at (250..255, 870..875) on every dream frame
-  // where the present could be isolated, and +/-16px of error still ranked the
-  // right present first.
-  bubbleX: 252,
-  bubbleY: 872,
-  bubbleSide: 240,
-
-  // Cloud test, used to tell "bubble is up" from "presents are up" and from
-  // "the skill is over". Measured 0.484-0.503 on bubble frames vs 0.019-0.060
-  // on present frames, so the threshold sits in a very wide gap.
-  cloudBox: {x0: 60, y0: 690, x1: 450, y1: 1050},
-  cloudSatMax: 70,
-  cloudValMin: 180,
-  // Sample spacing inside the box, leaving 162 samples.
-  //
-  // Was briefly 40 (64 samples). The gap between a bubble frame and a present
-  // frame is wide enough for that, but the fraction is also read *during* the
-  // bubble's fade, where the true value passes through the threshold: at 64
-  // samples the standard error there is 0.06, so a mid-fade reading can call
-  // the cloud gone early, and matching then starts on the hand-over frames.
-  // The sample count is not really buying precision at the extremes, it is
-  // buying it in the middle.
-  cloudStep: 24,
-  cloudMinFrac: 0.25,
-  // This test is polled in a loop, and it is only asking whether a big pale
-  // blob is present, so it gets its own small capture with no blur. At the
-  // matching resolution each check cost a 420x420 grab plus a 7px blur, which
-  // made the poll slower than the interval it was polling on.
-  //
-  // This is the resolution the whole play square would be captured at; only
-  // cloudBox is actually grabbed, scaled to match. Nothing outside the box is
-  // ever read, so capturing the rest of the board was pure overhead.
-  cloudCaptureSize: 120,
-
-  // Comparison grid. Each crop is reduced to grid x grid cells; cells are
-  // compared only where the template says the present is, which drops the board
-  // background (dark tsums) and the bubble background (white cloud) alike.
-  // 10 through 20 all scored the same offline, so this is the cheap end of the
-  // range that still held up: 12x12 cells over 20 candidates is 2880 reads.
-  grid: 12,
-  satMin: 70,
-  valMin: 170,
-
-  // Per-cell differences are divided by this and clipped at 1, so the score
-  // counts clearly-disagreeing cells instead of averaging away small ones.
-  // Raised the worst-case margin from 0.095 to 0.264 against the same frames.
-  cellSpread: 0.30,
-
-  // A tap needs both of these. The score alone cannot say whether the presents
-  // are up yet: a green template scores 0.461 against ordinary green tsums, so
-  // a board with no presents on it would clear any floor low enough to keep the
-  // real matches (which fall to ~0.44 if the presents are 10px off the table).
-  //
-  // The margin does separate the two, because bare board has no standout winner
-  // -- it reached 0.096 at best, where a real choice screen never scored under
-  // 0.278. So the floor rejects noise and the margin proves a present is there.
-  confidenceFloor: 0.42,
-  marginFloor: 0.12,
-
-  // Tapping a present detonates an area of the board, so the blast wants a full,
-  // still board under it. The play loop clears a chain immediately before the
-  // skill fires (and may have just used the fan), so at activation the tsums are
-  // almost always mid-fall and a blast then catches very few of them.
-  //
-  // How long that takes varies with how much was cleared, so it is measured
-  // rather than guessed: take a coarse brightness fingerprint of the board twice
-  // and watch how much it changes. Falling tsums move it a lot, a settled board
-  // barely at all (only sparkles and the fever glow).
-  //
-  // For scale, that measure is 0 between identical frames, ~0.06 between two
-  // frames of a similar scene, and 0.20-0.30 between wholly different screens.
-  // settleMaxDiff is the one number here not pinned down by measurement -- there
-  // were no consecutive-frame pairs to calibrate falling tsums against -- so it
-  // is set loose rather than tight: too strict just means every activation waits
-  // out settleWaitMs, which is the delay this was added to avoid. The timeout
-  // logs the diff it actually saw, which is what to tune from.
-  settleWaitMs: 320,
-  settleMinMs: 60,
-  settlePollMs: 30,
-  settleCapture: 64,
-  settleGrid: 16,
-  settleMaxDiff: 0.03,
-  settleQuietScans: 2,
-
-  // Timings. The bubble is shown once, ~2s after the skill fires, and the
-  // presents ~1s after that. The game timer is stopped while the presents are
-  // up, so the checks made there are free; everything before them costs real
-  // game time, which is what these two are sized against.
-  //
-  // Nothing can happen until the skill animation has played, so sit that out
-  // rather than spending ~15 screenshots polling for something that cannot have
-  // happened yet.
-  dreamLeadMs: 1500,
-  // Covers the lead plus a bubble arriving late. Only ever spent in full when
-  // the skill did not actually fire.
-  dreamWaitMs: 3000,
-  dreamSettleMs: 250,
-  // After the bubble clears, the presents take about a second to arrive. Waiting
-  // most of that out first means the matcher never sees the hand-over frames.
-  //
-  // This lead and pollMs have to be read together: matching starts at (however
-  // late the poll noticed the cloud go) + this. Trading one against the other
-  // by their averages is what caused wrong taps -- pollMs 100->200 raises the
-  // mean lag by 50ms but the *minimum* stays 0, so taking 100ms off this lead
-  // moved the earliest possible start from 500ms to 400ms after the bubble
-  // cleared. It is the earliest start that decides whether the matcher can see
-  // a present still sliding into place, and a present caught in transit can sit
-  // convincingly on a centre belonging to another layout.
-  choiceLeadMs: 500,
-  choiceWaitMs: 6000,
-  pollMs: 100,
-  // The matching loop keeps its own interval: it is not waiting on a known
-  // animation but on the presents becoming readable, and it leaves the moment
-  // two scans agree, so a slower cadence here would just delay the tap.
-  matchPollMs: 100,
-  agreeScans: 2,
-  pickTaps: 2,
-  pickTapDuring: 60,
-  pickTapGapMs: 50
-};
-
-// --- Game bubbles -------------------------------------------------------
-//
-// Tiara Minnie+ makes a bubble popped as a chain goes off clear a bigger area,
-// so bubbles are worth tapping the instant a long chain lands rather than on
-// the play loop's periodic sweep (which is ~50 blind taps and far too slow to
-// land inside a chain).
-//
-// A bubble is a circle like a tsum, only much bigger, so it falls out of the
-// same grayscale Hough pass findTsums already runs -- on the capture the scan
-// already took, which is what makes locating them cost nothing extra.
-var GameBubbleConfig = {
-  // Circle geometry in the 200px play-square space findTsums works in, where a
-  // tsum is radius 8-14.
-  //
-  // NOT YET CALIBRATED: there is no saved frame with a bubble on the board to
-  // measure against, so this range is reasoned from a bubble being noticeably
-  // larger than a tsum, not measured. Getting it wrong costs stray taps on bare
-  // board, which the game ignores -- a tap is not a drag, so nothing links.
-  minRadius: 16,
-  maxRadius: 30,
-  minDist: 30,
-  param1: 20,
-  param2: 26,
-
-  // Chain length that earns a pop, and a cap so a frame full of false circles
-  // cannot turn into a long burst of taps mid-chain.
-  minChainForPop: 4,
-  maxTaps: 3,
-  tapDuring: 10
-};
-
-// Definitions assuming screen resolution of 1080 * 1920
-var Button: ButtonMap = {
-  gameBubblesFrom: {x: 100, y: 632},
-  gameBubblesTo: {x: 1000, y: 1532},
-  gameQuestionCancel: {x: 400, y: 1352},
-  gameQuestionCancel2: {x: 400, y: 1072},
-  gameStop: {x: 440, y: 1072},
-  gameSkill1: {x: 160, y: 1702},
-  gameSkill2: {x: 95, y: 1702},
-  gameRand: {x: 985, y: 1652, color: {"a":0,"b":6,"g":180,"r":232}},
-  gamePause: {x: 983, y: 322, color: {"a":0,"b":9,"g":188,"r":239}},
-  gameContinue: {x: 540, y: 1342, color: {"a":0,"b":13,"g":175,"r":240}},
-  outGameItems: [
-    {x: 205, y: 889},    // +Score
-    {x: 435, y: 893},    // +Coin
-    {x: 651, y: 889},    // +Exp
-    {x: 871, y: 893},    // +Time
-    {x: 201, y: 1167},   // +Bubble
-    {x: 424, y: 1170},   // 5>4
-    {x: 610, y: 1175}],  // +Combo
-  outStart: {x: 500, y: 1592, color: {"a":0,"b":129,"g":111,"r":236}}, // 開始
-  outClose: {x: 500, y: 1592, color: {"a":0,"b":7,"g":180,"r":236}}, // 關閉
-  outReceive: {x: 910, y: 422},
-  outReceiveAll: {x: 800, y: 1422},
-  outReceiveOk: {x: 835, y: 1092, color: {"a":0,"b":6,"g":175,"r":236}},
-  outReceiveAllHeartsDisabledJP: {x: 679, y: 880, color: {"a":0,"b":214,"g":129,"r":41}},
-  outReceiveAllRubiesEnabledJP: {x: 261, y: 705, color: {"a":0,"b":33,"g":178,"r":247}},
-  outReceiveAllOkJP: {x: 835, y: 1258, color: {"a":0,"b":6,"g":175,"r":236}},
-  outReceiveItemSetOk: {x: 830, y: 1260, color: {"a":0,"b":8,"g":176,"r":238}},
-  outReceiveClose: {x: 530, y: 1372},
-  outReceiveOneBase: {y: 569},
-  outReceiveOne: {x: 840, color: {"a":0,"b":30,"g":181,"r":235}, color2: {"a":0,"b":119,"g":74,"r":40}},
-  outReceiveOneRubyBase: {y: 651}, // ruby
-  outReceiveOneRuby: {x: 295, color: {r: 224, g: 93, b: 101}}, // ruby
-  outReceiveOneAdBase: { y: 672 }, // ad
-  outReceiveOneAd: { x: 290, color: { r: 90, g: 57, b: 25 } }, // ad
-  outReceiveTimeout: {x: 600, y: 1092, color: {"a":0,"b":11,"g":171,"r":235}},
-  outSendHeartTop: {x: 910, y: 502},
-  outSendHeart0: {x: 910, y: 698, color: {"a":0,"b":142,"g":60,"r":209}, color2: {"a":0,"b":140,"g":65,"r":3}},
-  outSendHeart1: {x: 910, y: 895, color: {"a":0,"b":142,"g":60,"r":209}, color2: {"a":0,"b":140,"g":65,"r":3}},
-  outSendHeart2: {x: 910, y: 1102, color: {"a":0,"b":142,"g":60,"r":209}, color2: {"a":0,"b":140,"g":65,"r":3}},
-  outSendHeart3: {x: 910, y: 1304, color: {"a":0,"b":142,"g":60,"r":209}, color2: {"a":0,"b":140,"g":65,"r":3}},
-  outSendHeartBottom: {x: 910, y: 1500},
-  outSendHeartClose: {x: 666, y: 1426, color: {r: 236, g: 178, b: 9}},
-  outSendHeartFrom: {x: 910, y: 602},
-  outSendHeartTo: {x: 910, y: 1322},
-  outSendHeartEnd: {x: 328, y: 1266, color: {"a":0,"b":132,"g":85,"r":47}},
-  outSendHeartEnd2: {x: 227, y: 1262, color: {"a":0,"b":123,"g":78,"r":44}},
-  outSendHeartEnd3: {x: 316, y: 1224, color: {r: 55, g: 91, b: 139}},
-  outFriendScoreFrom: {x: 550, y: 935, color: {"a":0,"b":140,"g":93,"r":55}},
-  outFriendScoreTo: {x: 760, y: 935},
-  outHomePage: {x: 60, y: 1000},
-  outFriendPage: {x: 60, y: 1130},
-  skillLuke1: {x: 1000, y: 1372},
-  skillLuke2: {x: 830, y: 1402},
-  skillLuke3: {x: 670, y: 1447},
-  skillLuke4: {x: 960, y: 1232},
-  skillCptLy1: {x: 670, y: 1050},
-  skillCptLy2: {x: 310, y: 1050},
-  skillCptLy3: {x: 540, y: 414},
-  outReceiveNameFromBase: {y: 532},
-  outReceiveNameFrom: {x: 150},
-  outReceiveNameToBase: {y: 670},
-  outReceiveNameTo: {x: 660},
-  moneyInfoBox: {x: 430, y: 188, w: 230, h: 56},
-  outOpenTsumCollectionOrder: {x: 983, y: 890, r: 165, g: 85, b: 49},
-
-  outCloseTsumCollectionOrderOld: {x: 552, y: 1365, r: 247, g: 174, b: 8},
-  outTsumCollectionOrderByReleaseDateOld: {name: 'By Release Date', x: 331, y: 774, r: 247, g: 178, b: 8},
-  outTsumCollectionOrderFavoritesOld: {name: 'By Favorites', x: 765, y: 769, r: 247, g: 174, b: 8},
-  outTsumCollectionOrderBySkillOld: {name: 'By Skill', x: 310, y: 988, r: 247, g: 174, b: 8},
-  outTsumCollectionOrderByLevelLockOld: {name: 'By Level Lock', x: 766, y: 984, r: 247, g: 174, b: 8},
-
-  outCloseTsumCollectionOrderNew: {x: 552, y: 1585, r: 247, g: 185, b: 8},
-  outTsumCollectionOrderByReleaseDateNew: {name: 'By Release Date', x: 330, y: 673, r: 247, g: 178, b: 8},
-  outTsumCollectionOrderFavoritesNew: {name: 'By Favorites', x: 765, y: 668, r: 247, g: 174, b: 8},
-  outTsumCollectionOrderBySkillNew: {name: 'By Skill', x: 310, y: 900, r: 247, g: 174, b: 8},
-  outTsumCollectionOrderByLevelLockNew: {name: 'By Level Lock', x: 766, y: 894, r: 247, g: 174, b: 8},
-  outTsumCollectionOrderByEntryDateNew: {name: 'By Entry Date', x: 310, y: 1125, r: 247, g: 174, b: 8},
-
-  outTsumCollectionDoUnlock: {x: 111, y: 760, r: 173, g: 109, b: 57}
-};
-
-var Page: PageMap = {
+var Page = {
 
   TodayMissions: {
     name: 'TodayMissions',
@@ -531,20 +234,21 @@ var Page: PageMap = {
   TsumsPage: {
     name: 'TsumsPage',
     colors: [
-      {x: 27,   y: 901, r: 197, g: 243, b: 254, match: true, threshold: 80},   // light header bar, far left (sort-independent)
-      {x: 436,  y: 902, r: 247, g: 247, b: 247, match: true, threshold: 80},   // white header gap between "Collection" and the dropdowns (sort-independent)
-      {x: 713,  y: 900, r: 247, g: 187, b: 16,  match: true, threshold: 80},   // "All Tsums" (left) dropdown gold fill
-      {x: 1030, y: 900, r: 249, g: 190, b: 19,  match: true, threshold: 80}    // right (sort) dropdown gold beside the arrow -- right-anchored, survives every sort label
+      {x: 27, y: 901, r: 197, g: 243, b: 254, match: true, threshold: 80},    // left of "Tsum Tsum Collection" title bar
+      {x: 436, y: 902, r: 247, g: 247, b: 247, match: true, threshold: 80},   // middle of "Tsum Tsum Collection" title bar
+      {x: 713, y: 900, r: 247, g: 187, b: 16, match: true, threshold: 80},   // right of "Tsum Tsum Collection" title bar (short before "Level Lock")
+      {x: 1030, y: 900, r: 249, g: 190, b: 19, match: true, threshold: 80}    // yellow "order" button
+
     ],
     lockIcons: [
-      {x: 196, y: 1195, r: 236, g: 245, b: 254},
-      {x: 430, y: 1195, r: 234, g: 244, b: 253},
-      {x: 665, y: 1195, r: 237, g: 246, b: 253},
-      {x: 900, y: 1195, r: 236, g: 246, b: 254},
-      {x: 196, y: 1450, r: 236, g: 245, b: 254},
-      {x: 430, y: 1450, r: 235, g: 244, b: 253},
-      {x: 665, y: 1450, r: 237, g: 246, b: 254},
-      {x: 900, y: 1450, r: 236, g: 246, b: 254}
+      {x: 196, y: 1195, r: 239, g: 247, b: 255},
+      {x: 430, y: 1195, r: 239, g: 247, b: 255},
+      {x: 665, y: 1195, r: 239, g: 247, b: 255},
+      {x: 900, y: 1195, r: 239, g: 247, b: 255},
+      {x: 196, y: 1450, r: 239, g: 247, b: 255},
+      {x: 430, y: 1450, r: 239, g: 247, b: 255},
+      {x: 665, y: 1450, r: 239, g: 247, b: 255},
+      {x: 900, y: 1450, r: 239, g: 247, b: 255}
     ],
     back: {x: 176, y: 1592},
     next: {x: 176, y: 1592},
@@ -751,15 +455,8 @@ var Page: PageMap = {
     back: {x: 986, y: 273},
     next: {x: 986, y: 273}
   },
-  // Root-detection warning (a native Android AlertDialog) as it looks on a
-  // handful of emulators. All variants share the page name so the navigation
-  // loops handle them the same way: hand the screen to dismissSystemDialog(),
-  // which finds the real "PERMIT" button in device pixels. The back/next
-  // coordinates below belong to one specific emulator and dpi each, so they are
-  // only a last-resort hint -- see dialogs.ts for why they cannot be trusted.
-  // The matched variant's key is still logged, so detection stays diagnosable.
   RootDetectionLdp1080p480dpiEn: {
-    name: 'RootDetection',
+    name: 'RootDetectionLdp1080p480dpiEn',
     colors: [
       {x: 80, y: 690, r: 255 , g: 255, b: 255, match: true, threshold: 25},
       {x: 70, y: 680,  r: 255 , g: 255, b: 255, match: false, threshold: 25},
@@ -771,7 +468,7 @@ var Page: PageMap = {
     onDetect: switchToStartupMode
   },
   RootDetectionLdp1080p480dpiJp: {
-    name: 'RootDetection',
+    name: 'RootDetectionLdp1080p480dpiJp',
     colors: [
       {x: 80, y: 635, r: 255 , g: 255, b: 255, match: true, threshold: 25},
       {x: 70, y: 625, r: 255 , g: 255, b: 255, match: false, threshold: 25},
@@ -783,7 +480,7 @@ var Page: PageMap = {
     onDetect: switchToStartupMode
   },
   RootDetectionLdp480x800x160dpiEn: {
-    name: 'RootDetection',
+    name: 'RootDetectionLdp480x800x160dpiEn',
     colors: [
       {x: 90, y: 780, r: 253 , g: 253, b: 253, match: true, threshold: 25},
       {x: 65, y: 745, r: 255 , g: 255, b: 255, match: false, threshold: 25},
@@ -795,7 +492,7 @@ var Page: PageMap = {
     onDetect: switchToStartupMode
   },
   RootDetectionNox1080p360dpiEn: {
-    name: 'RootDetection',
+    name: 'RootDetectionNox1080p360dpiEn',
     colors: [
       {x: 135, y: 795, r: 255 , g: 255, b: 255, match: true, threshold: 25},
       {x: 125, y: 785, r: 255 , g: 255, b: 255, match: false, threshold: 25},
@@ -807,7 +504,7 @@ var Page: PageMap = {
     onDetect: switchToStartupMode
   },
   RootDetectionNox480x800x160dpiJp: {
-    name: 'RootDetection',
+    name: 'RootDetectionNox480x800x160dpiJp',
     colors: [
       {x: 85, y: 735, r: 255 , g: 255, b: 255, match: true, threshold: 25},
       {x: 75, y: 725, r: 255 , g: 255, b: 255, match: false, threshold: 25},
@@ -819,7 +516,7 @@ var Page: PageMap = {
     onDetect: switchToStartupMode
   },
   RootDetectionNox480x800x160dpiEn: {
-    name: 'RootDetection',
+    name: 'RootDetectionNox480x800x160dpiEn',
     colors: [
       {x: 85, y: 760, r: 255 , g: 255, b: 255, match: true, threshold: 25},
       {x: 75, y: 750, r: 255 , g: 255, b: 255, match: false, threshold: 25},
@@ -831,7 +528,7 @@ var Page: PageMap = {
     onDetect: switchToStartupMode
   },
   RootDetectionSamsungA20En: {
-    name: 'RootDetection',
+    name: 'RootDetectionSamsungA20En',
     colors: [
       {x: 60, y: 440, r: 255 , g: 255, b: 255, match: true, threshold: 25},
       {x: 50, y: 440, r: 255 , g: 255, b: 255, match: false, threshold: 25},
@@ -842,26 +539,6 @@ var Page: PageMap = {
     ],
     back: {x: 850, y: 1230},
     next: {x: 850, y: 1230},
-    onDetect: switchToStartupMode
-  },
-  // White AlertDialog variant on 1080x1920 portrait: a white popup box over a
-  // dimmed grey background, with blue "REFUSE" / "PERMIT" link-style buttons
-  // bottom-right.
-  // Only the panel/scrim probes are kept: probes on the button text itself never
-  // matched, because findPageObject reads a screenshot downscaled to 360px wide
-  // and JPEG-compressed, which leaves nothing of a thin blue glyph at a guessed
-  // position. The panel/scrim shape is coarse on purpose -- the tap that follows
-  // is located and verified by dismissSystemDialog(), not by these coordinates.
-  RootDetection1080pEn: {
-    name: 'RootDetection',
-    colors: [
-      {x: 950, y:  868, r: 255, g: 255, b: 255, match: true,  threshold: 25}, // white dialog interior (top-right)
-      {x: 540, y: 1100, r: 255, g: 255, b: 255, match: true,  threshold: 25}, // white dialog interior (below buttons)
-      {x: 540, y:  300, r: 255, g: 255, b: 255, match: false, threshold: 25}, // dimmed grey overlay above dialog
-      {x: 540, y: 1500, r: 255, g: 255, b: 255, match: false, threshold: 25}  // dimmed grey overlay below dialog
-    ],
-    back: {x: 932, y: 1059}, // estimated PERMIT position, hint only
-    next: {x: 932, y: 1059},
     onDetect: switchToStartupMode
   },
   MagicalTime: {
@@ -1052,10 +729,3 @@ var Page: PageMap = {
     next: {x: 867, y: 1270}
   }
 };
-
-// page callbacks (this = actual Tsum instance)
-function switchToStartupMode() {
-  this.isStartupPhase = true;
-}
-
-
