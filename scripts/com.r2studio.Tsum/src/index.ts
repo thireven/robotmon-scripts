@@ -26,6 +26,7 @@ function start(settings) {
   ts.skillLevel = settings['skillLevel'];
   ts.skillType = settings['skillType'];
   ts.skillAutoTap = !!settings['skillAutoTap'];
+  ts.handleLongSkillAnimations = settings['handleLongSkillAnimations'] || false;
   ts.unlockLevelHoursWait = settings["unlockLevelHoursWait"];
   ts.sendHearts = settings['sendHeartsAuto'];
   ts.showHeartLog = true;
@@ -56,11 +57,7 @@ function start(settings) {
   }
 
   Config.debugLogs = settings['debugLogs'];
-  // 0 (or absent) means no limit. The slider can reach 1 and 2, which no chain
-  // can be, so anything positive is raised to 3 rather than silently becoming
-  // "unlimited".
-  const maxChain = settings['maxChain'];
-  Config.maxChain = (typeof maxChain === 'number' && maxChain > 0) ? Math.max(3, maxChain) : 0;
+  Config.maxChain = settings['maxChain'];
   ts.autobuyBoxes = settings['autobuyBoxes'];
   ts.noSkillLastFeverSec = settings['noSkillLastFeverSec'];
   ts.claimAllWithoutCoins = settings['claimAllWithoutCoins'];

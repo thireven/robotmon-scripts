@@ -3,6 +3,50 @@
 Orientation for anyone touching the source. For what the script *does* and what
 each setting means, see [README.md](README.md).
 
+## Parity with TsumBeta
+
+This package is a TypeScript refactor of `com.r2studio.TsumBeta`
+(`src/index.js`), and the two are meant to be runnable side by side so a
+behaviour change can be attributed to the refactor rather than to a feature
+difference. **Default settings on both sides should produce the same play.**
+
+Comparison method (a throwaway Node script does all of it — the sources are
+plain scripts with no imports, so each function body can be pulled out by name):
+extract every `function NAME` and `Tsum.prototype.NAME` from both sides,
+normalise away comments, whitespace, `var`/`let`/`const` and TS annotations,
+and compare. Do the same for the `Page`/`Button`/`Config` tables by evaluating
+the object literals and diffing flattened key paths, and for the `settings`
+arrays keyed by `key`. As of the last pass: 82 functions normalise identically,
+and everything below is the complete remainder.
+
+**Behaviourally identical, differing only in form** — safe to ignore when
+chasing a discrepancy: `try`/`finally` guards around `releaseImage` (the leak
+fixes; identical unless a native call throws), variable hoisting and renames,
+constants lifted out of function bodies (`PlayAreaTopY`, `ShellBootClassPath`,
+`SkillNotActiveColors`), and the skill dispatch table — `SkillHandlers` plus
+`skillBareTapActivates()` replaces Beta's `if (skillType === 'burst' || ...)`
+chains and resolves to the same skills.
+
+**Genuine differences that remain.** Each one is a confound for a side-by-side
+run; check here first when the two diverge:
+
+| Area | TsumBeta | Here |
+|:--|:--|:--|
+| Path search | greedy nearest-neighbour walk from every tsum, deduped (`calculateNearTsumPaths`) | connected components + bounded-DFS longest path (`buildTsumNeighbors`/`findTsumComponents`/`findLongestTsumPath`) |
+| Unknown screen | blind `DPAD_DOWN`+`ENTER` | tries `dismissSystemDialog()` first (structural native-dialog handling) |
+| Navigation loops | loop until the target page is reached | stall guards that escalate to a dialog check, then an app restart (`newStallGuard`/`checkStall`) |
+| Sender portraits | every recorded portrait held in memory | most recent `maxRecordImages` (200) only |
+| App restart on stall | n/a | `forceRestartApp()`, gated on "Auto launch app" |
+| Overload taps | n/a | blind skill taps in `link()` for bare-tap skills |
+| MyTsum | n/a | colour sampled per game, drives "Link MyTsum first" |
+| Extra settings | n/a | `clickAssist`, `maxChainsPerScan`, `prioritizeMyTsum` — all default to Beta's behaviour (off, 6 = Beta's hard-coded `splice(0, 6)`, off) |
+| Extra tasks | n/a | `taskClickAssist`, `taskWatchdog` |
+
+Two things are deliberately held identical **because** they are tempting to
+tune independently, and tuning one alone invalidates every comparison: the
+drag timings in `linkTsums` (10/10/10 ms), and the `taskTsumAppRestart` body,
+which is inlined rather than calling `forceRestartApp()` for that reason.
+
 ## The one thing to understand first
 
 **There are no imports and no modules.** Every `.ts` file under `src/` is

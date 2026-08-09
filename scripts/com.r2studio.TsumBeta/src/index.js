@@ -394,9 +394,13 @@ function calculateNearTsumPaths(tsum, ts) {
     if (minIdx === -1 || minDis > Config.tsumWidth * 2.8) {
       break;
     }
-    components.push(comp);
+    // Step onto the nearest remaining tsum and take it out of the candidate
+    // list so the walk can't come back to it.
+    tsum = minTsum;
+    tsums.splice(minIdx, 1);
+    path.push(tsum);
   }
-  return components;
+  return path;
 }
 
 // Bounded DFS backtracking — searches for the longest simple path inside one

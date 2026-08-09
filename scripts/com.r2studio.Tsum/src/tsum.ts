@@ -91,6 +91,10 @@ function Tsum(isJP, detect, logs) {
   this._lastProgress = Date.now();
   this._lastSeenCount = 3;  // matches the 3 init keys above
   this.stuckTimeoutMs = 180 * 1000;
+  // "Handle Long Skill Animations": off means TsumBeta's original game-over
+  // check (one 500ms recheck, then assume the game ended), on means the
+  // positive confirmation in confirmGameOver.
+  this.handleLongSkillAnimations = false;
   // How long the play loop tolerates an unrecognized screen before accepting
   // game over (see confirmGameOver). Must outlast the longest burst-skill
   // animation; a real game over exits earlier via ScorePage detection.
@@ -308,13 +312,16 @@ Tsum.prototype.tapUp = function(xy, during) {
 }
 
 Tsum.prototype.linkTsums = function(path) {
-  // Drag timings (ms). At 10ms the game often fails to register the initial
-  // press or skips intermediate tsums, so a found 3+ chain never clears. Hold
-  // a bit longer on press-down and give each move enough time to emit touch
-  // samples the game can hit-test. Tune down if it feels sluggish.
-  const grabDuring = 30;
-  const moveDuring = 20;
-  const releaseDuring = 20;
+  // Drag timings (ms), held identical to TsumBeta so the two scripts can be
+  // compared without the input path being a variable.
+  //
+  // These were 30/20/20 here for a while: at 10ms the game was observed to
+  // miss the initial press or skip intermediate tsums, so a found 3+ chain
+  // never cleared. If that shows up again it will show up in Beta too — raise
+  // both together, or the comparison stops meaning anything.
+  const grabDuring = 10;
+  const moveDuring = 10;
+  const releaseDuring = 10;
   for (let j = 0; j < path.length; j++) {
     const point = path[j];
     const x = Math.floor(this.playOffsetX + (point.x + Config.tsumWidth / 2) * this.playWidth / this.playResizeWidth);
@@ -974,11 +981,20 @@ Tsum.prototype.taskPlayGameQuick = function() {
     }
 
     // double check
-    const page = this.findPage(1, 2500);
+    let page = this.findPage(1, 2500);
     if (page !== 'GamePlaying' && page !== 'GamePause') {
-      if (this.confirmGameOver()) {
-        log(this.logs.gameOver);
-        break;
+      if (this.handleLongSkillAnimations) {
+        if (this.confirmGameOver()) {
+          log(this.logs.gameOver);
+          break;
+        }
+      } else {
+        this.sleep(500);
+        page = this.findPage(1, 2500);
+        if (page !== 'GamePlaying' && page !== 'GamePause') {
+          log(this.logs.gameOver);
+          break;
+        }
       }
     }
     this.runTimes++;
@@ -1842,7 +1858,15 @@ Tsum.prototype.taskTsumAppRestart = function () {
     this.goFriendPage();
 
     log("Restarting TsumApp");
-    this.forceRestartApp();
+    // Inlined rather than routed through forceRestartApp(): that helper is the
+    // stall-recovery path (dialogs.ts) and differs from TsumBeta here — it is
+    // gated on "Auto launch app", waits 3s, and always relaunches. This task
+    // matches Beta exactly.
+    execute("am force-stop " + getPackageName(this.isJP));
+    this.sleep(10000);
+    if (!this.isAppOn()) {
+        this.startApp();
+    }
     this.goFriendPage();
     log("TsumTsumApp restarted");
 }

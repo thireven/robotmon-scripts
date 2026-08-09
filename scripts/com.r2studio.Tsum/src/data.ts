@@ -8,10 +8,10 @@ var Config: TsumConfig = {
   screenResize: 200,
   gameContinueDelay: 400,
   colors: [[255,0,0], [0,255,0], [0,0,255], [0,255,255], [255,0,255]],
-  // Longest chain the board scan is allowed to return; 0 means no limit, which
-  // is the historical behaviour (take the longest chain that exists). See the
-  // "Maximum chain length" setting.
-  maxChain: 0,
+  // Longest chain the board scan may return, as TsumBeta ("Maximum Chain
+  // Number", 3-15). 0 is not reachable from the settings UI and is treated as
+  // "no limit" so a config written before this setting existed still runs.
+  maxChain: 3,
   debugLogs: false
 };
 

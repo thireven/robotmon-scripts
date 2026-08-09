@@ -129,12 +129,12 @@ var settings = [
         },
         {
             key: 'maxChain',
-            title: 'Maximum chain length (0 = no limit)',
-            title_zh_TW: '最大連鎖數 (0 = 無限制)',
-            default: 0,
+            title: 'Maximum Chain Number',
+            title_zh_TW: '最大連鎖數',
+            default: 3,
             step: 1,
             max: 15,
-            min: 0
+            min: 3
         },
         {
             key: 'prioritizeMyTsum',
@@ -237,6 +237,12 @@ var settings = [
             step: 1,
             max: 10,
             min: 0
+        },
+        {
+            key: 'handleLongSkillAnimations',
+            title: 'Handle Long Skill Animations',
+            title_zh_TW: '處理長技能動畫',
+            default: false
         },
         {
             key: 'unlockLevelHoursWait',
@@ -372,14 +378,14 @@ var settings = [
             title_zh_TW: '定時重啟Tsum app（時）',
             min: 0,
             max: 120,
-            step: 1,
+            step: 6,
             default: 0
         },
         {
             key: 'skillAutoTap',
-            title: 'Auto-tap skill when ready (checks every 0.5s, even mid-link)',
-            title_zh_TW: '技能就緒時自動點擊（每0.5秒檢查，連線中也會）',
-            default: false
+            title: 'Auto Tap Skill',
+            title_zh_TW: '自動點擊技能',
+            default: true
         }
     ]
 ];
