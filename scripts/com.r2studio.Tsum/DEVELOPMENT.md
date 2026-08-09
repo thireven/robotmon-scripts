@@ -4,6 +4,7 @@ Orientation for anyone touching the source. For what the script *does* and what
 each setting means, see [README.md](README.md).
 
 ## Parity with TsumBeta
+This is a temporary section until parity is confirmed.
 
 This package is a TypeScript refactor of `com.r2studio.TsumBeta`
 (`src/index.js`), and the two are meant to be runnable side by side so a
