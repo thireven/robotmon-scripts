@@ -8,6 +8,10 @@ var Config: TsumConfig = {
   screenResize: 200,
   gameContinueDelay: 400,
   colors: [[255,0,0], [0,255,0], [0,0,255], [0,255,255], [255,0,255]],
+  // Longest chain the board scan is allowed to return; 0 means no limit, which
+  // is the historical behaviour (take the longest chain that exists). See the
+  // "Maximum chain length" setting.
+  maxChain: 0,
   debugLogs: false
 };
 
@@ -537,15 +541,18 @@ var Page: PageMap = {
       {x: 713,  y: 900, r: 247, g: 187, b: 16,  match: true, threshold: 80},   // "All Tsums" (left) dropdown gold fill
       {x: 1030, y: 900, r: 249, g: 190, b: 19,  match: true, threshold: 80}    // right (sort) dropdown gold beside the arrow -- right-anchored, survives every sort label
     ],
+    // The pale badge behind the padlock on a level-locked Tsum, sampled at the
+    // eight card positions of one collection page. Re-measured for the current
+    // client (was 234-237/244-246/253-254; TsumBeta v84).
     lockIcons: [
-      {x: 196, y: 1195, r: 236, g: 245, b: 254},
-      {x: 430, y: 1195, r: 234, g: 244, b: 253},
-      {x: 665, y: 1195, r: 237, g: 246, b: 253},
-      {x: 900, y: 1195, r: 236, g: 246, b: 254},
-      {x: 196, y: 1450, r: 236, g: 245, b: 254},
-      {x: 430, y: 1450, r: 235, g: 244, b: 253},
-      {x: 665, y: 1450, r: 237, g: 246, b: 254},
-      {x: 900, y: 1450, r: 236, g: 246, b: 254}
+      {x: 196, y: 1195, r: 239, g: 247, b: 255},
+      {x: 430, y: 1195, r: 239, g: 247, b: 255},
+      {x: 665, y: 1195, r: 239, g: 247, b: 255},
+      {x: 900, y: 1195, r: 239, g: 247, b: 255},
+      {x: 196, y: 1450, r: 239, g: 247, b: 255},
+      {x: 430, y: 1450, r: 239, g: 247, b: 255},
+      {x: 665, y: 1450, r: 239, g: 247, b: 255},
+      {x: 900, y: 1450, r: 239, g: 247, b: 255}
     ],
     back: {x: 176, y: 1592},
     next: {x: 176, y: 1592},

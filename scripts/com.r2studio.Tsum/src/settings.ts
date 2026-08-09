@@ -128,6 +128,15 @@ var settings = [
             min: 1
         },
         {
+            key: 'maxChain',
+            title: 'Maximum chain length (0 = no limit)',
+            title_zh_TW: '最大連鎖數 (0 = 無限制)',
+            default: 0,
+            step: 1,
+            max: 15,
+            min: 0
+        },
+        {
             key: 'prioritizeMyTsum',
             title: 'Link MyTsum first (fills the skill gauge faster)',
             title_zh_TW: '優先連結我的Tsum（技能集氣較快）',

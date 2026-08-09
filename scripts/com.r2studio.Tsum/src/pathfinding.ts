@@ -57,7 +57,13 @@ function findTsumComponents(neighbors) {
 // chain, a second pass tries to extend it from both endpoints into the
 // remaining unvisited subgraph, which rescues cases where the initial DFS
 // began in the middle of a longer chain and could only walk one direction.
-function findLongestTsumPath(neighbors, comp, budgetPerStart) {
+//
+// maxLen caps the chain the search may return (Infinity for no cap). It is a
+// stopping condition rather than a post-hoc trim: once a chain of that length
+// exists there is nothing better to find, so the search returns immediately —
+// which is where the speed-up of a short cap comes from.
+function findLongestTsumPath(neighbors, comp, budgetPerStart, maxLen) {
+  if (maxLen === undefined || !(maxLen > 0)) { maxLen = Infinity; }
   const n = neighbors.length;
   const visited = new Array(n);
   const path = [];
@@ -81,12 +87,12 @@ function findLongestTsumPath(neighbors, comp, budgetPerStart) {
       state.bestLen = path.length;
       state.best = path.slice();
     }
-    if (state.steps < state.budget) {
+    if (state.steps < state.budget && state.bestLen < maxLen) {
       const nbrs = sortedNbrs[idx];
       for (let k = 0; k < nbrs.length; k++) {
         if (!visited[nbrs[k]]) {
           dfs(nbrs[k]);
-          if (state.steps >= state.budget) { break; }
+          if (state.steps >= state.budget || state.bestLen >= maxLen) { break; }
         }
       }
     }
@@ -118,22 +124,26 @@ function findLongestTsumPath(neighbors, comp, budgetPerStart) {
     if (candidate.length > globalBest.length) {
       globalBest = candidate;
     }
-    if (globalBest.length >= comp.length) { break; }
+    if (globalBest.length >= comp.length || globalBest.length >= maxLen) { break; }
   }
 
   // Bidirectional extension: if the chain doesn't cover the component, try to
   // extend from each endpoint into the remaining nodes. Recovers chains when
   // DFS started from a node that wasn't a true endpoint.
-  if (globalBest.length > 0 && globalBest.length < comp.length) {
+  if (globalBest.length > 0 && globalBest.length < comp.length && globalBest.length < maxLen) {
     const inChain = new Array(n);
     for (let i = 0; i < n; i++) { inChain[i] = false; }
     for (let i = 0; i < globalBest.length; i++) { inChain[globalBest[i]] = true; }
 
     for (let e = 0; e < 2; e++) {
+      const room = maxLen - globalBest.length;
+      if (room <= 0) { break; }
       const ep = (e === 0) ? globalBest[0] : globalBest[globalBest.length - 1];
       const extension = runDfs(ep, inChain);
       if (extension.length > 1) {
-        const extra = extension.slice(1);
+        // The extension starts on the endpoint itself, so only what follows it
+        // is new — and only as much of it as the cap still has room for.
+        const extra = extension.slice(1, 1 + room);
         if (e === 0) {
           extra.reverse();
           globalBest = extra.concat(globalBest);
@@ -162,6 +172,10 @@ function calculatePaths(board, logs, myTsumIdx, prioritizeMyTsum) {
   const threshold = Config.tsumWidth * 2.8;
   const maxDistSq = threshold * threshold;
   const paths: TsumPath[] = [];
+  // A cap makes the search stop as soon as a chain that long is found, so short
+  // caps also make the scan cheaper — which is the point for tsums that play
+  // better on many quick chains than on a few long ones.
+  const maxLen = Config.maxChain > 0 ? Config.maxChain : Infinity;
 
   for (const tsumIdx in groups) {
     const group = groups[tsumIdx];
@@ -175,7 +189,7 @@ function calculatePaths(board, logs, myTsumIdx, prioritizeMyTsum) {
       if (comp.length < 3) { continue; }
       // Per-start budget — multiplied across up to 6 starts + 2 extensions.
       const budgetPerStart = Math.min(1500, 100 + comp.length * comp.length * 6);
-      const bestIndices = findLongestTsumPath(neighbors, comp, budgetPerStart);
+      const bestIndices = findLongestTsumPath(neighbors, comp, budgetPerStart, maxLen);
       if (bestIndices.length >= 3) {
         const pathPoints: TsumPath = [];
         for (let p = 0; p < bestIndices.length; p++) {
@@ -200,6 +214,14 @@ function calculatePaths(board, logs, myTsumIdx, prioritizeMyTsum) {
     return -1;
   });
   debug(logs.calculatedPath, paths.length, '(' + (Date.now() - startTime) + 'ms)');
+  // Lengths in play order, which is what "Maximum chain length" and
+  // "Chains per board scan" are tuned against. Built lazily: log() only calls
+  // the thunk when debug logs are on.
+  debug(logs.pathLengths, function() {
+    const lens = [];
+    for (let i = 0; i < paths.length; i++) { lens.push(paths[i].length); }
+    return lens.join(',');
+  });
   return paths;
 }
 
@@ -261,7 +283,10 @@ function findChainAtTouch(board, touchX, touchY) {
   if (comp.length < 3) { return null; }
 
   const budgetPerStart = Math.min(1500, 100 + comp.length * comp.length * 6);
-  const bestIndices = findLongestTsumPath(neighbors, comp, budgetPerStart);
+  // No cap here: "Maximum chain length" is about how the auto-player paces
+  // itself. Click Assist is the user pointing at a chain and asking for it, so
+  // it always draws the whole thing.
+  const bestIndices = findLongestTsumPath(neighbors, comp, budgetPerStart, Infinity);
   if (bestIndices.length < 3) { return null; }
 
   const pathPoints: TsumPath = [];

@@ -99,6 +99,7 @@ interface TsumConfig {
   screenResize: number;
   gameContinueDelay: number;
   colors: number[][];
+  maxChain: number;
   debugLogs: boolean;
 }
 
