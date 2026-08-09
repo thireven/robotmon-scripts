@@ -34,6 +34,7 @@ run; check here first when the two diverge:
 |:--|:--|:--|
 | Path search | greedy nearest-neighbour walk from every tsum, deduped (`calculateNearTsumPaths`) | connected components + bounded-DFS longest path (`buildTsumNeighbors`/`findTsumComponents`/`findLongestTsumPath`) |
 | Unknown screen | blind `DPAD_DOWN`+`ENTER` | tries `dismissSystemDialog()` first (structural native-dialog handling) |
+| `RootDetection*` pages | each entry keeps its own `name`, so `findPage()` returns e.g. `RootDetectionNox480x800x160dpiEn` | every entry is named `RootDetection`, which the navigation loops branch on; one extra fingerprint (`RootDetection1080pEn`). The whole rest of the `Page` and `Button` tables is value-identical |
 | Navigation loops | loop until the target page is reached | stall guards that escalate to a dialog check, then an app restart (`newStallGuard`/`checkStall`) |
 | Sender portraits | every recorded portrait held in memory | most recent `maxRecordImages` (200) only |
 | App restart on stall | n/a | `forceRestartApp()`, gated on "Auto launch app" |
