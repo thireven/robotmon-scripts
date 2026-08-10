@@ -39,7 +39,7 @@ const DialogPositiveText = /^(permit|allow|ok|yes|agree|accept|continue|許可|�
 const DialogNegativeText = /(refuse|deny|cancel|exit|quit|later|拒否|拒绝|拒絕|取消|いいえ|終了|취소)/i;
 
 /** The dialog's own background: light and near-neutral (white/off-white panel). */
-function isDialogPanelColor(c: ColorLike): boolean {
+function isDialogPanelColor(c: Color): boolean {
   if (c === undefined || c === null) {
     return false;
   }
@@ -49,7 +49,7 @@ function isDialogPanelColor(c: ColorLike): boolean {
 }
 
 /** Accent-coloured ink. In an AlertDialog only the buttons are coloured; title and message are grey. */
-function isDialogAccentColor(c: ColorLike): boolean {
+function isDialogAccentColor(c: Color): boolean {
   if (c === undefined || c === null) {
     return false;
   }
@@ -68,7 +68,7 @@ Tsum.prototype.dialogScreenshot = function(sw, sh) {
  * from the game's own bright screens (loading, white popups), which run edge to
  * edge. Returns null when no such panel is on screen.
  */
-Tsum.prototype.findSystemDialog = function(): DialogBox {
+Tsum.prototype.findSystemDialog = function() {
   const scale = Math.max(1, this.originScreenWidth / DialogScanWidth);
   const sw = Math.floor(this.originScreenWidth / scale);
   const sh = Math.floor(this.originScreenHeight / scale);
@@ -192,7 +192,7 @@ Tsum.prototype.findDialogButton = function(box) {
     const by0 = box.y1 - Math.max(10, Math.round(panelH * 0.32));
     const xStep = Math.max(2, Math.round(panelW / 120));
     const samples = Math.floor((bx1 - bx0) / xStep) + 1;
-    const rowInk = function(y) {
+    const rowInk = function(y: number): number {
       let ink = 0;
       for (let x = bx0; x <= bx1; x += xStep) {
         if (!isDialogPanelColor(getImageColor(img, x, y))) {
@@ -205,7 +205,7 @@ Tsum.prototype.findDialogButton = function(box) {
     // border), not a label -- text leaves gaps. Treating it as a label would
     // stretch the "rightmost word" to the panel edge and aim the tap past the
     // button, so dividers bound the band instead of joining it.
-    const isTextRow = function(ink) { return ink >= 2 && ink < samples * 0.7; };
+    const isTextRow = function(ink: number): boolean { return ink >= 2 && ink < samples * 0.7; };
     let bandBottom = -1;
     for (let y = by1; y >= by0; y -= 2) {
       if (isTextRow(rowInk(y))) {
@@ -233,8 +233,8 @@ Tsum.prototype.findDialogButton = function(box) {
     }
     // Fine pass over the band only: at this step the sampling actually lands on
     // the thin glyph strokes, so the label's right end is measured, not guessed.
-    const accent = [];
-    const ink = [];
+    const accent: number[] = [];
+    const ink: number[] = [];
     for (let y = bandTop; y <= bandBottom; y++) {
       for (let x = bx0; x <= bx1; x += 2) {
         const c = getImageColor(img, x, y);
@@ -410,10 +410,10 @@ Tsum.prototype.tryDismissDialog = function(box, hint) {
     // "REFUSE" and close the game, and only then can the script bring it back.
     log('[Dialog] falling back to dpad focus + enter');
     for (let i = 0; i < 5; i++) {
-      keycode('KEYCODE_DPAD_RIGHT', 50);
+      keycode(KeyCode.DpadRight, 50);
       this.sleep(100);
     }
-    keycode('KEYCODE_ENTER', 50);
+    keycode(KeyCode.Enter, 50);
     if (this.dialogChanged(box)) {
       return true;
     }

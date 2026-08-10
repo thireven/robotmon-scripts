@@ -4,7 +4,7 @@
 // is already on them), then the skill is flown with five upward drags, then the
 // same four positions again.
 
-function lukeJTapTargets(ts: any) {
+function lukeJTapTargets(ts: Tsum) {
   ts.tap(Button.skillLuke1, 30);
   ts.tap(Button.skillLuke2, 30);
   ts.tap(Button.skillLuke3, 30);
@@ -12,7 +12,7 @@ function lukeJTapTargets(ts: any) {
 }
 
 registerSkill({
-  types: ['block_lukej_s'],
+  types: [SkillType.JediLuke],
   beforeActivate: lukeJTapTargets,
   afterActivate: function(ts) {
     for (let i = 0; i < 5; i++) {

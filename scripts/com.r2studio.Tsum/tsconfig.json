@@ -12,14 +12,15 @@
     "rootDir": "./src",
     "removeComments": false,
     "newLine": "lf",
-    "strict": false,
-    "noImplicitAny": false,
-    "noImplicitThis": false,
+    "strict": true,
     "skipLibCheck": true,
     "noEmitOnError": false,
     "ignoreDeprecations": "6.0"
   },
   "files": [
+    // Types only, no emit. shared.d.ts is also compiled into the settings UI,
+    // so both sides of the start() bridge agree on the Settings shape.
+    "src/shared.d.ts",
     "src/globals.d.ts",
     "src/taskController.ts",
     "src/state.ts",

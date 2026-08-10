@@ -5,7 +5,7 @@
 // beyond that.
 
 registerSkill({
-  types: ['block_pair_tsum'],
+  types: [SkillType.PairTsum],
   usesSecondButton: true,
   afterActivate: function(ts) {
     skillRandomizeAndWait(ts);

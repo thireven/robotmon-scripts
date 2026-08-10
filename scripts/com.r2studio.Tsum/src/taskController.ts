@@ -59,7 +59,7 @@ class TsumTaskController {
           log("[Watchdog] task '" + name + "' threw (" + this.errorCount + "): " + e);
           if (this.errorCount >= 5) {
             log("[Watchdog] 5 consecutive errors, restarting Tsum app");
-            try { ts.taskTsumAppRestart(); } catch (e2) { log("[Watchdog] restart failed: " + e2); }
+            try { ts!.taskTsumAppRestart(); } catch (e2) { log("[Watchdog] restart failed: " + e2); }
             this.errorCount = 0;
           }
         }

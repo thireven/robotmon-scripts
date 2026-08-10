@@ -12,7 +12,7 @@
 
 interface SkillHandler {
   // skillType keys (from the Skill Type dropdown in settings) this handler drives.
-  types: string[];
+  types: SkillType[];
   // A bare tap on the skill button is a complete activation: no aiming, no
   // follow-up, and a tap while the gauge is still filling is a no-op the game
   // ignores. Lets the play loop fire these blind instead of paying for a gauge
@@ -23,13 +23,18 @@ interface SkillHandler {
   usesSecondButton?: boolean;
   // Runs after the gauge check but before the activation tap -- settle waits and
   // pre-taps that have to land while the skill is not yet running.
-  beforeActivate?: (ts: any) => void;
+  beforeActivate?: (ts: Tsum) => void;
   // The choreography, run straight after the activation tap. Returning false
   // reports "did not fire" to the caller even though the skill went off.
-  afterActivate?: (ts: any, board: any) => boolean | void;
+  afterActivate?: (ts: Tsum, board?: BoardPoint[]) => boolean | void;
 }
 
-var SkillHandlers: { [type: string]: SkillHandler } = {};
+// Keyed loosely, valued as possibly-absent: a miss is normal (SkillType.NoSkill has no
+// handler, and a stale setting from an older build still has to play). What is
+// checked is *registration* -- registerSkill takes SkillType[], so a handler
+// cannot be filed under an id the dropdown does not offer, which is the
+// direction typos actually go.
+var SkillHandlers: { [type: string]: SkillHandler | undefined } = {};
 
 function registerSkill(handler: SkillHandler) {
   for (let i = 0; i < handler.types.length; i++) {
@@ -40,12 +45,12 @@ function registerSkill(handler: SkillHandler) {
 // Skills with no choreography of their own: tap randomize (tsums that support it
 // reshuffle) and wait out skillInterval. Also what an unregistered skillType
 // falls back to, so a stale setting still plays.
-function skillRandomizeAndWait(ts: any) {
+function skillRandomizeAndWait(ts: Tsum) {
   ts.tap(Button.gameRand, 100);
   ts.sleep(ts.skillInterval - 100);
 }
 
-function skillBareTapActivates(skillType: string): boolean {
+function skillBareTapActivates(skillType: SkillType): boolean {
   const handler = SkillHandlers[skillType];
   return !!(handler && handler.bareTapActivates);
 }
@@ -72,9 +77,9 @@ Tsum.prototype.checkSkillReadiness = function(img, skillButton) {
     if (isSameColor(nc, c, 25)) { matchesTight = true; }
     if (isSameColor(nc, c, 60)) { matchesLoose = true; }
   }
-  if (!matchesLoose) { return 'active'; }
-  if (!matchesTight) { return 'almost'; }
-  return 'far';
+  if (!matchesLoose) { return SkillReadiness.Active; }
+  if (!matchesTight) { return SkillReadiness.Almost; }
+  return SkillReadiness.Far;
 };
 
 // Whether firing the fan now would be a waste: the tsums it shuffles are about
@@ -85,7 +90,7 @@ Tsum.prototype.checkSkillReadiness = function(img, skillButton) {
 Tsum.prototype.fanWouldBeWasted = function() {
   const img = this.screenshot();
   try {
-    return this.checkSkillReadiness(img, Button.gameSkill1) !== 'far';
+    return this.checkSkillReadiness(img, Button.gameSkill1) !== SkillReadiness.Far;
   } finally {
     releaseImage(img);
   }
@@ -113,20 +118,20 @@ Tsum.prototype.maybeAutoTapSkill = function(board) {
   // gauge check, several screenshots) so the recurring cost while the gauge is
   // still filling stays at a single screenshot.
   const img = this.screenshot();
-  let status: string;
+  let status: SkillReadiness;
   try {
     status = this.checkSkillReadiness(img, Button.gameSkill1);
   } finally {
     releaseImage(img);
   }
-  if (status === 'active') {
+  if (status === SkillReadiness.Active) {
     this.useSkill(board);
   }
 };
 
 // Hold off activating while a fever is about to end, so the skill's clear lands
 // in the next fever rather than being spent on its last moments.
-function skillWaitOutEndingFever(ts: any) {
+function skillWaitOutEndingFever(ts: Tsum) {
   let feverAlmostOver = null;
   do {
     if (feverAlmostOver) {
@@ -157,12 +162,12 @@ function skillWaitOutEndingFever(ts: any) {
 }
 
 Tsum.prototype.useSkill = function(board) {
-  if (this.skillType === 'no_skill') {
+  if (this.skillType === SkillType.NoSkill) {
     return false;
   }
 
   const page = this.findPage(1, 500);
-  if (page !== 'GamePlaying' && page !== 'GamePause') {
+  if (page !== PageName.GamePlaying && page !== PageName.GamePause) {
     return false;
   }
 
@@ -175,9 +180,9 @@ Tsum.prototype.useSkill = function(board) {
     const img = this.screenshot();
     let skillActive1;
     try {
-      skillActive1 = this.checkSkillReadiness(img, Button.gameSkill1) === 'active';
+      skillActive1 = this.checkSkillReadiness(img, Button.gameSkill1) === SkillReadiness.Active;
       skillActive2 = usesSecondButton
-        && this.checkSkillReadiness(img, Button.gameSkill2) === 'active';
+        && this.checkSkillReadiness(img, Button.gameSkill2) === SkillReadiness.Active;
     } finally {
       releaseImage(img);
     }

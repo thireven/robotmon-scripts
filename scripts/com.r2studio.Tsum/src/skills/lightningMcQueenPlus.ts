@@ -5,7 +5,7 @@
 // poll gives up after 20 tries and lets the animation finish on its own.
 
 registerSkill({
-  types: ['block_lightning_mcqueen_plus_s'],
+  types: [SkillType.LightningMcQueenPlus],
   beforeActivate: function(ts) {
     ts.sleep(200);  // let tsums settle
   },

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Converted from settings.js - best-effort TypeScript port.
 "use strict";
 
@@ -206,28 +205,32 @@ var settings = [
             key: 'skillType',
             title: 'Skill Type',
             title_zh_TW: '技能類型',
-            default: 'burst',
-            dropdown: [
-                {key: 'burst', title: 'Burst', title_zh_TW: '消除系'},
-                {key: 'burst_bubbles', title: 'Burst bubbles', title_zh_TW: '消除系2'},
-                {key: 'block_donald_s', title: 'Donald', title_zh_TW: '唐老鴨'},
-                {key: 'block_donaldx_s', title: 'Holiday Donald', title_zh_TW: '假日唐老鴨'},
-                {key: 'block_lukej_s', title: 'Jedi Luke', title_zh_TW: '絕地路克'},
-                {key: 'block_moana_s', title: 'Moana', title_zh_TW: '莫娜'},
-                {key: 'block_marie_s', title: 'Marie', title_zh_TW: '瑪麗'},
-                {key: 'block_missbunny_s', title: 'Miss Bunny', title_zh_TW: '小兔子'},
-                {key: 'block_rabbit_s', title: 'Rabbit', title_zh_TW: '兔子'},
-                {key: 'block_mickeyh2015_s', title: 'Horn Hat Mickey', title_zh_TW: '角帽米奇'},
-                {key: 'block_snowwhite_s', title: 'Snow White', title_zh_TW: '白雪公主'},
-                {key: 'block_cinderella_s', title: 'Cinderella', title_zh_TW: '仙度瑞拉'},
-                {key: 'block_woody2_s', title: 'Sheriff Woody', title_zh_TW: '警長胡迪'},
-                {key: 'block_cabbage_mickey_s', title: 'Cabbage Mickey', title_zh_TW: '高麗菜米奇'},
-                {key: 'block_cpt_ly_s', title: 'Cpt. Lightyear', title_zh_TW: '光年隊長'},
-                {key: 'block_lightning_mcqueen_plus_s', title: 'Lightning McQueen+', title_zh_TW: '閃電麥坤+'},
-                {key: 'block_tiara_minnie_plus_s', title: 'Tiara Minnie+', title_zh_TW: '皇冠米妮+'},
-                {key: 'block_pair_tsum', title: 'Pair Tsum', title_zh_TW: '搭檔Tsum'},
-                {key: 'no_skill', title: 'No Skill', title_zh_TW: '没有技能'}
-            ]
+            default: SkillType.Burst as SkillType,
+            // `satisfies` so a key that is not a SkillType fails the build:
+            // this dropdown is the only place these ids are offered to the
+            // user, and one that no skill file registers plays as a plain
+            // burst -- it works, so nothing reports it.
+            dropdown: ([
+                {key: SkillType.Burst, title: 'Burst', title_zh_TW: '消除系'},
+                {key: SkillType.BurstBubbles, title: 'Burst bubbles', title_zh_TW: '消除系2'},
+                {key: SkillType.Donald, title: 'Donald', title_zh_TW: '唐老鴨'},
+                {key: SkillType.HolidayDonald, title: 'Holiday Donald', title_zh_TW: '假日唐老鴨'},
+                {key: SkillType.JediLuke, title: 'Jedi Luke', title_zh_TW: '絕地路克'},
+                {key: SkillType.Moana, title: 'Moana', title_zh_TW: '莫娜'},
+                {key: SkillType.Marie, title: 'Marie', title_zh_TW: '瑪麗'},
+                {key: SkillType.MissBunny, title: 'Miss Bunny', title_zh_TW: '小兔子'},
+                {key: SkillType.Rabbit, title: 'Rabbit', title_zh_TW: '兔子'},
+                {key: SkillType.HornHatMickey, title: 'Horn Hat Mickey', title_zh_TW: '角帽米奇'},
+                {key: SkillType.SnowWhite, title: 'Snow White', title_zh_TW: '白雪公主'},
+                {key: SkillType.Cinderella, title: 'Cinderella', title_zh_TW: '仙度瑞拉'},
+                {key: SkillType.SheriffWoody, title: 'Sheriff Woody', title_zh_TW: '警長胡迪'},
+                {key: SkillType.CabbageMickey, title: 'Cabbage Mickey', title_zh_TW: '高麗菜米奇'},
+                {key: SkillType.CptLightyear, title: 'Cpt. Lightyear', title_zh_TW: '光年隊長'},
+                {key: SkillType.LightningMcQueenPlus, title: 'Lightning McQueen+', title_zh_TW: '閃電麥坤+'},
+                {key: SkillType.TiaraMinniePlus, title: 'Tiara Minnie+', title_zh_TW: '皇冠米妮+'},
+                {key: SkillType.PairTsum, title: 'Pair Tsum', title_zh_TW: '搭檔Tsum'},
+                {key: SkillType.NoSkill, title: 'No Skill', title_zh_TW: '没有技能'}
+            ] satisfies { key: SkillType; title: string; title_zh_TW: string }[])
         },
         {
             key: 'noSkillLastFeverSec',
@@ -467,12 +470,16 @@ function resetSettings() {
       .show();
 }
 
-function genStartCommand(settings) {
-    var commandSettings = {};
+function genStartCommand(settings: SettingSpec[][]): string {
+    // Keyed rather than a bare `{}` so the assignments below are checked: a key
+    // that is not in Settings is a setting the game script will never read.
+    var commandSettings: Partial<Settings> & { [k: string]: unknown } = {};
     for (var i in settings) {
         for (var g in settings[i]) {
             var setting = settings[i][g];
-            var key = setting.key;
+            // Every entry carrying a `default` also carries a `key`; the
+            // title-only rows have neither and fall through all four branches.
+            var key = setting.key!;
             var selector = "." + key;
             if (typeof setting.default === 'boolean') {
                 commandSettings[key] = $(selector).is(':checked');
@@ -585,7 +592,7 @@ function genSettings(jContainer, settings) {
                 // Check if the current step is already 1
                 var hasIncrementBy1 = (step === 1);
 
-                var jBtns = [];
+                var jBtns: any[] = [];
                 var jInput = $('<input id="setting_value_' + key + '" class="setting_input_value" type="number" value="' + setting.default + '" readonly/>').addClass(key);
                 var jBtnP = $('<button id="setting_value_p_' + key + '" class="btn btn-danger">+' + step + '</button>');
                 var jBtnM = $('<button id="setting_value_m_' + key + '" class="btn btn-danger">-' + step + '</button>');
@@ -656,7 +663,7 @@ function genSettings(jContainer, settings) {
                 appendTitle(jSetting, title);
                 appendCol(jSetting, jInput);
             } else if (setting.buttons !== undefined) {
-                var jBtns = [];
+                var jBtns: any[] = [];
                 for (var j in setting.buttons) {
                     var jBtn = $('<button id="setting_value_b_' + key + '" onclick=' + setting.buttons[j].onclick + '>' + setting.buttons[j].title + '</button>').addClass('btn btn-plus');
                     jBtns.push(jBtn);
@@ -696,13 +703,11 @@ function onLog(message) {
     console.log(message);
 }
 
-function log() {
+function log(...parts: string[]): void {
     var params = '[Settings] ';
-    if (typeof arguments === 'object') {
-        for (var k in arguments) {
-            var arg = arguments[k];
-            params += arg.replace(/'/g, '"') + ' ';
-        }
+    for (var k in parts) {
+        var arg = parts[k];
+        params += arg.replace(/'/g, '"') + ' ';
     }
     if (typeof JavaScriptInterface !== "undefined" && typeof JavaScriptInterface.runScript === "function") {
         JavaScriptInterface.runScript('console.log(\'' + params + '\')');
@@ -716,7 +721,7 @@ function refreshRecord() {
     JavaScriptInterface.runScriptCallback('readFile(getStoragePath() + "/tsum_record/record.txt")', 'genRecord');
 }
 
-var imageQueue = [];
+var imageQueue: string[] = [];
 var isRunning = false;
 
 function getBase64(id, filename) {
@@ -724,7 +729,7 @@ function getBase64(id, filename) {
     imageQueue.push(script);
     if (!isRunning) {
         isRunning = true;
-        JavaScriptInterface.runScriptCallback(imageQueue.shift(), 'assignImage');
+        JavaScriptInterface.runScriptCallback(imageQueue.shift()!, 'assignImage');
     }
 }
 
@@ -736,7 +741,7 @@ function assignImage(results) {
     if (imageQueue.length === 0) {
         isRunning = false;
     } else {
-        JavaScriptInterface.runScriptCallback(imageQueue.shift(), 'assignImage');
+        JavaScriptInterface.runScriptCallback(imageQueue.shift()!, 'assignImage');
     }
 }
 
@@ -767,7 +772,7 @@ function genRecord(record) {
     record = [];
     var filename;
     for (filename in recordObjs) {
-        if (filename === 'hearts_count') {
+        if (filename === RecordKey.HeartsCount) {
             continue;
         }
         var obj = recordObjs[filename];
@@ -811,7 +816,7 @@ function genRecord(record) {
     $('#record').html(html);
 }
 
-var $exportRecordLegacy = $('#exportRecordLegacy').on('click', function () {
+var $exportRecordLegacy = $('#exportRecordLegacy').on('click', function (this: HTMLElement) {
     $(this).text(i18n('輸出中', 'Exporting'));
     var html = $('#record').html();
     html = html.replace(/\n/g, '');
@@ -850,7 +855,7 @@ $(function ($) {
         refreshRecord();
     });
     var protect = true;
-    $('#resetRecord').text(i18n('清除紀錄', 'Reset Record')).on('click', function () {
+    $('#resetRecord').text(i18n('清除紀錄', 'Reset Record')).on('click', function (this: HTMLElement) {
         if (protect) {
             $(this).text(i18n('確定要清除紀錄嗎？', 'Are you sure?'));
         } else {

@@ -76,8 +76,9 @@ var TiaraHueSin: number[] = [];
 // read at all. On the reference bubbles the mask keeps between 8% and 58% of
 // the 144 cells, around 38% on average, and that is the factor it takes off
 // every candidate.
-function tiaraCompileTemplate(t: number[], grid: number) {
-  const idx = [], hx = [], hy = [], sat = [], val = [];
+function tiaraCompileTemplate(t: number[], grid: number): TiaraTemplate {
+  const idx: number[] = [], hx: number[] = [], hy: number[] = [],
+        sat: number[] = [], val: number[] = [];
   const cells = grid * grid;
   for (let i = 0; i < cells; i++) {
     const k = i * 5;
@@ -95,7 +96,7 @@ Tsum.prototype.tiaraBoardSignature = function() {
   const n = cfg.settleCapture;
   const img = getScreenshotModify(
     this.playOffsetX, this.playOffsetY, this.playWidth, this.playHeight, n, n, 100);
-  const out = [];
+  const out: number[] = [];
   try {
     const step = n / cfg.settleGrid;
     for (let gy = 0; gy < cfg.settleGrid; gy++) {
@@ -168,14 +169,14 @@ Tsum.prototype.tiaraCapture = function() {
 // These depend only on the layout tables and the capture size, so every table
 // is worked out once and kept -- the match loop would otherwise redo a few
 // thousand of these multiplies per scan for coordinates that never change.
-function tiaraCellPixels(lcx: number, lcy: number, side: number) {
+function tiaraCellPixels(lcx: number, lcy: number, side: number): TiaraCells {
   const cfg = TiaraMinnieConfig;
   const g = cfg.grid;
   const scale = cfg.captureSize / 1080;
   const step = side / g;
   const left = lcx - side / 2;
   const top = lcy - side / 2;
-  const px = [], py = [];
+  const px: number[] = [], py: number[] = [];
   for (let cy = 0; cy < g; cy++) {
     for (let cx = 0; cx < g; cx++) {
       const x = Math.round((left + (cx + 0.5) * step) * scale);
@@ -188,9 +189,9 @@ function tiaraCellPixels(lcx: number, lcy: number, side: number) {
   return {px: px, py: py};
 }
 
-var TiaraBubbleCells = null;
+var TiaraBubbleCells: TiaraCells | null = null;
 
-function tiaraBubbleCells() {
+function tiaraBubbleCells(): TiaraCells {
   if (TiaraBubbleCells == null) {
     const cfg = TiaraMinnieConfig;
     TiaraBubbleCells = tiaraCellPixels(cfg.bubbleX, cfg.bubbleY, cfg.bubbleSide);
@@ -208,7 +209,7 @@ function tiaraBubbleCells() {
 Tsum.prototype.tiaraSample = function(img, cells) {
   const cfg = TiaraMinnieConfig;
   const n = cfg.grid * cfg.grid;
-  const out = [];
+  const out: number[] = [];
   for (let i = 0; i < n; i++) {
     const px = cells.px[i];
     let h = 0, s = 0, v = 0;
@@ -239,12 +240,12 @@ Tsum.prototype.tiaraCloudCapture = function() {
     this.playOffsetX, this.playOffsetY, this.playWidth, this.playHeight, n, n, 100);
 };
 
-var TiaraCloudPoints = null;
+var TiaraCloudPoints: { xs: number[]; ys: number[]; n: number } | null = null;
 
 // The capture pixels the cloud test reads -- the same points it always read,
 // worked out once instead of on every poll, with the present dropped here
 // rather than tested each time round.
-function tiaraCloudPoints() {
+function tiaraCloudPoints(): { xs: number[]; ys: number[]; n: number } {
   if (TiaraCloudPoints != null) { return TiaraCloudPoints; }
   const cfg = TiaraMinnieConfig;
   const box = cfg.cloudBox;
@@ -253,7 +254,7 @@ function tiaraCloudPoints() {
   const half = cfg.bubbleSide / 2;
   const ex0 = cfg.bubbleX - half, ex1 = cfg.bubbleX + half;
   const ey0 = cfg.bubbleY - half, ey1 = cfg.bubbleY + half;
-  const xs = [], ys = [];
+  const xs: number[] = [], ys: number[] = [];
   for (let ly = box.y0; ly <= box.y1; ly += cfg.cloudStep) {
     for (let lx = box.x0; lx <= box.x1; lx += cfg.cloudStep) {
       // Skip the present itself: only the cloud around it should count.
@@ -297,13 +298,13 @@ Tsum.prototype.tiaraCloudFrac = function(img) {
   return hit / pts.n;
 };
 
-var TiaraCandidates = null;
+var TiaraCandidates: TiaraCandidate[] | null = null;
 
 // Every present centre from every layout, each with the cell table for the crop
 // size that suits its count. Scored together; the count is never decided.
-function tiaraCandidates() {
+function tiaraCandidates(): TiaraCandidate[] {
   if (TiaraCandidates != null) { return TiaraCandidates; }
-  const out = [];
+  const out: TiaraCandidate[] = [];
   for (let n = 2; n <= 6; n++) {
     const slots = TiaraLayouts[n];
     const side = TiaraSlotSide[n];
@@ -491,7 +492,7 @@ Tsum.prototype.useTiaraMinniePlusSkill = function() {
 };
 
 registerSkill({
-  types: ['block_tiara_minnie_plus_s'],
+  types: [SkillType.TiaraMinniePlus],
   beforeActivate: function(ts) {
     // Her picks detonate the board, so wait for it to stop moving first.
     ts.tiaraWaitForSettledBoard();

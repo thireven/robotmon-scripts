@@ -2,7 +2,7 @@
 // the middle of the board. Three full sweeps per activation.
 
 registerSkill({
-  types: ['block_woody2_s'],
+  types: [SkillType.SheriffWoody],
   afterActivate: function(ts) {
     ts.sleep(1800);
     ts.tapDown({x: 540, y: 960}, 20);

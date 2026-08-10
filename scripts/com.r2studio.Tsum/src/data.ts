@@ -218,7 +218,39 @@ var GameBubbleConfig = {
 };
 
 // Definitions assuming screen resolution of 1080 * 1920
-var Button: ButtonMap = {
+//
+// Deliberately un-annotated. An index-signature type (`{[k: string]: any}`)
+// erases the keys, which is what made `Button.gameSkill1` resolve to nothing
+// and `Button.gameSkil1` compile. Inferring the literal instead gives every
+// entry go-to-definition straight to its coordinates, and makes a mistyped
+// name an error at the use site.
+//
+// The five `outReceive*` entries below carry no `y` of their own -- start()
+// patches it in from the matching `*Base` entry, offset by whether the first
+// mail row is skipped -- so each is annotated with the shape it has by the time
+// anything reads it. Three of them are colour-matched, so their `color` is
+// declared present rather than optional; the two name markers are bare points.
+/**
+ * The pre-game bonus toggles, in screen order. checkGameItem() indexes this and
+ * its `isItemsOn` companion by the same positions, so the order is part of the
+ * contract rather than an accident of layout.
+ */
+type GameItemToggles = [
+  score: Point, coin: Point, exp: Point, time: Point,
+  bubble: Point, fiveToFour: Point, combo: Point
+];
+
+/** The wanted on/off state of each toggle above, in the same seven positions. */
+type GameItemStates = [
+  score: boolean, coin: boolean, exp: boolean, time: boolean,
+  bubble: boolean, fiveToFour: boolean, combo: boolean
+];
+
+type PatchedYPoint = { x: number; y: number };
+type PatchedYColor = { x: number; y: number; color: Color };
+type PatchedYColorPair = { x: number; y: number; color: Color; color2: Color };
+
+var Button = {
   gameBubblesFrom: {x: 100, y: 632},
   gameBubblesTo: {x: 1000, y: 1532},
   gameQuestionCancel: {x: 400, y: 1352},
@@ -229,6 +261,13 @@ var Button: ButtonMap = {
   gameRand: {x: 985, y: 1652, color: {"a":0,"b":6,"g":180,"r":232}},
   gamePause: {x: 983, y: 322, color: {"a":0,"b":9,"g":188,"r":239}},
   gameContinue: {x: 540, y: 1342, color: {"a":0,"b":13,"g":175,"r":240}},
+  // The seven bonus-item toggles on the pre-game screen, in screen order.
+  //
+  // Positional: checkGameItem() walks this alongside an `isItemsOn` array built
+  // in the same order, so index 5 meaning "5>4" is load-bearing and was only
+  // ever recorded in these comments. The labelled tuple puts it in the type,
+  // and fixes the length -- adding an eighth toggle here without updating
+  // checkGameItem is now a build error rather than a silently ignored item.
   outGameItems: [
     {x: 205, y: 889},    // +Score
     {x: 435, y: 893},    // +Coin
@@ -236,7 +275,8 @@ var Button: ButtonMap = {
     {x: 871, y: 893},    // +Time
     {x: 201, y: 1167},   // +Bubble
     {x: 424, y: 1170},   // 5>4
-    {x: 610, y: 1175}],  // +Combo
+    {x: 610, y: 1175}    // +Combo
+  ] as GameItemToggles,
   outStart: {x: 500, y: 1592, color: {"a":0,"b":129,"g":111,"r":236}}, // 開始
   outClose: {x: 500, y: 1592, color: {"a":0,"b":7,"g":180,"r":236}}, // 關閉
   outReceive: {x: 910, y: 422},
@@ -248,11 +288,11 @@ var Button: ButtonMap = {
   outReceiveItemSetOk: {x: 830, y: 1260, color: {"a":0,"b":8,"g":176,"r":238}},
   outReceiveClose: {x: 530, y: 1372},
   outReceiveOneBase: {y: 569},
-  outReceiveOne: {x: 840, color: {"a":0,"b":30,"g":181,"r":235}, color2: {"a":0,"b":119,"g":74,"r":40}},
+  outReceiveOne: {x: 840, color: {"a":0,"b":30,"g":181,"r":235}, color2: {"a":0,"b":119,"g":74,"r":40}} as PatchedYColorPair,
   outReceiveOneRubyBase: {y: 651}, // ruby
-  outReceiveOneRuby: {x: 295, color: {r: 224, g: 93, b: 101}}, // ruby
+  outReceiveOneRuby: {x: 295, color: {r: 224, g: 93, b: 101}} as PatchedYColor, // ruby
   outReceiveOneAdBase: { y: 672 }, // ad
-  outReceiveOneAd: { x: 290, color: { r: 90, g: 57, b: 25 } }, // ad
+  outReceiveOneAd: { x: 290, color: { r: 90, g: 57, b: 25 } } as PatchedYColor, // ad
   outReceiveTimeout: {x: 600, y: 1092, color: {"a":0,"b":11,"g":171,"r":235}},
   outSendHeartTop: {x: 910, y: 502},
   outSendHeart0: {x: 910, y: 698, color: {"a":0,"b":142,"g":60,"r":209}, color2: {"a":0,"b":140,"g":65,"r":3}},
@@ -278,9 +318,9 @@ var Button: ButtonMap = {
   skillCptLy2: {x: 310, y: 1050},
   skillCptLy3: {x: 540, y: 414},
   outReceiveNameFromBase: {y: 532},
-  outReceiveNameFrom: {x: 150},
+  outReceiveNameFrom: {x: 150} as PatchedYPoint,
   outReceiveNameToBase: {y: 670},
-  outReceiveNameTo: {x: 660},
+  outReceiveNameTo: {x: 660} as PatchedYPoint,
   moneyInfoBox: {x: 430, y: 188, w: 230, h: 56},
   outOpenTsumCollectionOrder: {x: 983, y: 890, r: 165, g: 85, b: 49},
 
@@ -300,10 +340,76 @@ var Button: ButtonMap = {
   outTsumCollectionDoUnlock: {x: 111, y: 760, r: 173, g: 109, b: 57}
 };
 
-var Page: PageMap = {
+// Every screen the script can recognise.
+//
+// This is the vocabulary `findPage()` speaks: it returns one of these names (or
+// `'unknown'`), and roughly thirty comparisons around the codebase test against
+// them. Declaring the set makes those comparisons checked in both directions --
+// a name misspelt in the table below, or in a comparison anywhere, is a build
+// error rather than a branch that silently never runs.
+//
+// Several names have more than one entry in `Page`: they are alternative colour
+// fingerprints (regional variants, emulator/dpi variants) for one screen, and
+// `findPageObject` returns whichever matches. `RootDetection` has eight.
+// A `const enum` rather than a union of string literals: it is erased at compile
+// time and every use inlines to exactly the string below, so this costs nothing
+// at runtime while giving each name one definition to jump to, find references
+// on, and rename.
+const enum PageName {
+  // In game
+  GamePlaying = 'GamePlaying',
+  GamePause = 'GamePause',
+  ScorePage = 'ScorePage',
+  HighScore = 'HighScore',
+  LevelUp = 'LevelUp',
+  MagicalTime = 'MagicalTime',
+  // Home / navigation
+  StartPage = 'StartPage',
+  FriendPage = 'FriendPage',
+  FriendInfo = 'FriendInfo',
+  ProfilePage = 'ProfilePage',
+  SquarePage = 'SquarePage',
+  ClosePage = 'ClosePage',
+  TapOpenPage = 'TapOpenPage',
+  TapOpenPageDeprecated = 'TapOpenPageDeprecated',
+  // Tsum collection and store
+  TsumsPage = 'TsumsPage',
+  TsumTsumStorePage = 'TsumTsumStorePage',
+  ConfirmPurchasePage = 'ConfirmPurchasePage',
+  BoxPurchasedPage = 'BoxPurchasedPage',
+  OutOfMedals = 'OutOfMedals',
+  RubyResetDifficulty = 'RubyResetDifficulty',
+  // Mail / hearts
+  MailBox = 'MailBox',
+  Received = 'Received',
+  ReceiveHeart = 'ReceiveHeart',
+  ReceiveHeartWithoutCoins = 'ReceiveHeartWithoutCoins',
+  ReceiveSkillTicket = 'ReceiveSkillTicket',
+  ReceivePremiumTicket = 'ReceivePremiumTicket',
+  GiftHeart = 'GiftHeart',
+  // Missions
+  TodayMission = 'TodayMission',
+  TodayMissions = 'TodayMissions',
+  // Interruptions
+  RootDetection = 'RootDetection',
+  NetworkDisable = 'NetworkDisable',
+  NetworkTimeout = 'NetworkTimeout',
+  ExtraUpdate = 'ExtraUpdate',
+  // Not a screen: what findPage() reports when nothing fingerprinted. No `Page`
+  // entry carries it.
+  Unknown = 'unknown',
+}
+
+// `satisfies` rather than a plain annotation: every entry is still checked
+// against PageDef, but the inferred type keeps the exact key set, so
+// `Page.ClosePage.back` resolves to the coordinates below. It also keeps each
+// entry's `name` as its literal type rather than widening it to `PageName`.
+// The fingerprint loops that walk the table by string key cast to `PageMap` for
+// an index signature (see findPageObject).
+var Page = {
 
   TodayMissions: {
-    name: 'TodayMissions',
+    name: PageName.TodayMissions,
     colors: [
       {x: 764, y: 445, r: 248, g: 190, b: 15, match: true, threshold: 80},
       {x: 781, y: 436, r: 165, g: 92, b: 63, match: true, threshold: 80},
@@ -319,7 +425,7 @@ var Page: PageMap = {
     next: {x: 176, y: 1662}
   },
   TodayMission: {
-    name: 'TodayMission',
+    name: PageName.TodayMission,
     colors: [
       {x: 540, y: 1480, r: 238, g: 181, b: 12 , match: true, threshold: 80},
       {x: 975, y: 500, r: 161, g: 224, b: 231, match: true, threshold: 80},
@@ -329,7 +435,7 @@ var Page: PageMap = {
     next: {x: 558, y: 1473}
   },
   ScorePage: {
-    name: 'ScorePage',
+    name: PageName.ScorePage,
     colors: [
       {x: 302, y: 1581, r: 235, g: 184, b: 7  , match: true, threshold: 80},
       {x: 777, y: 1588, r: 248, g: 142, b: 20 , match: true, threshold: 80},
@@ -339,7 +445,7 @@ var Page: PageMap = {
     next: {x: 784, y: 1653}
   },
   ProfilePageJp: {
-    name: 'ProfilePage',
+    name: PageName.ProfilePage,
     colors: [
       {x: 540, y: 1592, r: 246, g: 135, b:  17, match: true, threshold: 80}, // top of the start button
       {x: 187, y: 1599, r: 240, g: 218, b:  72, match: true, threshold: 80}, // top of the card button
@@ -354,7 +460,7 @@ var Page: PageMap = {
     tsums: {x: 900, y: 1653}
   },
   ProfilePageIntl: {
-    name: 'ProfilePage',
+    name: PageName.ProfilePage,
     colors: [
       {x: 540, y: 1592, r: 246, g: 135, b:  17, match: true, threshold: 80}, // top of the start button
       {x: 187, y: 1599, r: 240, g: 218, b:  72, match: true, threshold: 80}, // top of the card button
@@ -369,7 +475,7 @@ var Page: PageMap = {
     tsums: {x: 900, y: 1653}
   },
   SquarePage: {
-    name: 'SquarePage',
+    name: PageName.SquarePage,
     colors: [
       {x: 540, y: 1592, r: 246, g: 135, b:  17, match: true, threshold: 80}, // top of the start button
       {x: 187, y: 1599, r: 240, g: 218, b:  72, match: true, threshold: 80}, // top of the card button
@@ -382,7 +488,7 @@ var Page: PageMap = {
     next: {x: 31, y: 1126}
   },
   FriendPage: {
-    name: 'FriendPage',
+    name: PageName.FriendPage,
     colors: [
       {x: 540, y: 1592, r: 246, g: 135, b: 17 , match: true, threshold: 80}, // top of the start button
       {x: 187, y: 1599, r: 240, g: 218, b: 72 , match: true, threshold: 80}, // top of the card button
@@ -395,7 +501,7 @@ var Page: PageMap = {
     tsums: {x: 900, y: 1653}
   },
   FriendPage2: {
-    name: 'FriendPage',
+    name: PageName.FriendPage,
     colors: [
       {x: 540, y: 1649, r: 175, g: 188, b: 197, match: true, threshold: 80}, // center of the Tsum Hades
       {x: 187, y: 1599, r: 240, g: 218, b: 72 , match: true, threshold: 80}, // top of the card button
@@ -408,7 +514,7 @@ var Page: PageMap = {
     tsums: {x: 900, y: 1653}
   },
   FriendPage3: {
-    name: 'FriendPage',
+    name: PageName.FriendPage,
     colors: [
       {x: 540, y: 1649, r: 203, g: 192, b: 237, match: true, threshold: 80}, // center of the Tsum Ursula
       {x: 187, y: 1599, r: 240, g: 218, b: 72 , match: true, threshold: 80}, // top of the card button
@@ -421,7 +527,7 @@ var Page: PageMap = {
     tsums: {x: 900, y: 1653}
   },
   FriendPage4: {
-    name: 'FriendPage',
+    name: PageName.FriendPage,
     colors: [
       {x: 540, y: 1649, r: 79 , g: 89 , b: 94 , match: true, threshold: 80}, // center of the Tsum Maleficentd
       {x: 187, y: 1599, r: 240, g: 218, b: 72 , match: true, threshold: 80}, // top of the card button
@@ -434,7 +540,7 @@ var Page: PageMap = {
     tsums: {x: 900, y: 1653}
   },
   GiftHeart: {
-    name: 'GiftHeart',
+    name: PageName.GiftHeart,
     colors: [
       {x: 216, y: 1084, r: 233, g: 172, b: 6  , match: true, threshold: 80},
       {x: 673, y: 1080, r: 235, g: 174, b: 8  , match: true, threshold: 80},
@@ -446,7 +552,7 @@ var Page: PageMap = {
     next: {x: 320, y: 1091}
   },
   MailBox: {
-    name: 'MailBox',
+    name: PageName.MailBox,
     colors: [
       {x: 738, y: 414, r: 240, g: 245, b: 239, match: true, threshold: 80},
       {x: 550, y: 1581, r: 238, g: 187, b: 10 , match: true, threshold: 80},
@@ -456,7 +562,7 @@ var Page: PageMap = {
     next: {x: 561, y: 1653}
   },
   MailBox2: {
-    name: 'MailBox',
+    name: PageName.MailBox,
     colors: [
       {x: 738, y: 414, r: 240, g: 245, b: 239, match: true, threshold: 80},
       {x: 550, y: 1581, r: 238, g: 187, b: 10 , match: true, threshold: 80},
@@ -466,7 +572,7 @@ var Page: PageMap = {
     next: {x: 561, y: 1653}
   },
   ReceiveHeart: {
-    name: 'ReceiveHeart',
+    name: PageName.ReceiveHeart,
     colors: [
       {x: 208, y: 1080, r: 233, g: 172, b: 6  , match: true, threshold: 80},
       {x: 662, y: 1080, r: 232, g: 171, b: 5  , match: true, threshold: 80},
@@ -479,7 +585,7 @@ var Page: PageMap = {
     next: {x: 320, y: 1091}
   },
   Received: {
-    name: 'Received',
+    name: PageName.Received,
     colors: [
       {x: 799, y: 716, r: 30, g: 188, b: 223, match: true, threshold: 80},
       {x: 806, y: 889, r: 45, g: 80 , b: 122, match: true, threshold: 80},
@@ -489,7 +595,7 @@ var Page: PageMap = {
     next: {x: 320, y: 1091}
   },
   Received2: {
-    name: 'Received',
+    name: PageName.Received,
     colors: [
       {x: 799, y: 716, r: 30, g: 188, b: 223, match: true, threshold: 80},
       {x: 889, y: 824, r: 40, g: 72 , b: 111, match: true, threshold: 80},
@@ -499,7 +605,7 @@ var Page: PageMap = {
     next: {x: 320, y: 1091}
   },
   StartPage: {
-    name: 'StartPage',
+    name: PageName.StartPage,
     colors: [
       {x: 752, y: 471, r: 244, g: 249, b: 243, match: true, threshold: 80},
       {x: 856, y: 1430, r: 30 , g: 193, b: 224, match: true, threshold: 80},
@@ -512,7 +618,7 @@ var Page: PageMap = {
     tsums: {x: 900, y: 1653}
   },
   StartPage2: {
-    name: 'StartPage',
+    name: PageName.StartPage,
     colors: [
       {x: 820,  y: 515, r: 245, g: 250, b: 244, match: true, threshold: 80},
       {x: 954,  y: 1426, r: 31 , g: 190, b: 220, match: true, threshold: 80},
@@ -524,7 +630,7 @@ var Page: PageMap = {
     next: {x: 558, y: 1635}
   },
   StartPage3: {
-    name: 'StartPage',
+    name: PageName.StartPage,
     colors: [
       {x: 400,  y: 1672, r: 245, g: 85, b: 115, match: true, threshold: 80},
       {x: 680,  y: 1672, r: 245, g: 85, b: 115, match: true, threshold: 80},
@@ -534,7 +640,7 @@ var Page: PageMap = {
     next: {x: 558, y: 1635}
   },
   TsumsPage: {
-    name: 'TsumsPage',
+    name: PageName.TsumsPage,
     colors: [
       {x: 27,   y: 901, r: 197, g: 243, b: 254, match: true, threshold: 80},   // light header bar, far left (sort-independent)
       {x: 436,  y: 902, r: 247, g: 247, b: 247, match: true, threshold: 80},   // white header gap between "Collection" and the dropdowns (sort-independent)
@@ -559,7 +665,7 @@ var Page: PageMap = {
     store: {x: 910, y: 1592}
   },
   TsumTsum2025StorePage: {
-    name: 'TsumTsumStorePage',
+    name: PageName.TsumTsumStorePage,
     colors: [
       {x: 30, y: 910, r: 16, g: 53, b: 93, match: true, threshold: 30},
       {x: 60, y: 910, r: 233, g: 171, b: 8, match: true, threshold: 30},
@@ -575,7 +681,7 @@ var Page: PageMap = {
     next: {x: 1000, y: 690, r: 238, g: 172, b: 8}
   },
   ConfirmPurchaseBoxPage: {
-    name: 'ConfirmPurchasePage',
+    name: PageName.ConfirmPurchasePage,
     colors: [
       {x: 208, y: 1070, r: 247, g: 176, b: 8, match: true, threshold: 30},  // left of Cancel button
       {x: 420, y: 1070, r: 247, g: 176, b: 8, match: true, threshold: 30},  // right of Cancel button
@@ -589,7 +695,7 @@ var Page: PageMap = {
     next: {x: 760, y: 1070}   // OK button
   },
   Confirm2025PurchaseBoxPage: {
-    name: 'ConfirmPurchasePage',
+    name: PageName.ConfirmPurchasePage,
     colors: [
       {x: 208, y: 1070, r: 247, g: 186, b:   8, match: true, threshold: 30},  // left of Cancel button
       {x: 420, y: 1070, r: 247, g: 184, b:   8, match: true, threshold: 30},  // right of Cancel button
@@ -603,7 +709,7 @@ var Page: PageMap = {
     next: {x: 760, y: 1070}   // OK button
   },
   ConfirmPurchaseCapsulePage: {
-    name: 'ConfirmPurchasePage',
+    name: PageName.ConfirmPurchasePage,
     colors: [
       {x: 200, y: 1444, r: 247, g: 178, b: 8, match: true, threshold: 30},  // left of Cancel button
       {x: 426, y: 1444, r: 247, g: 178, b: 8, match: true, threshold: 30},  // right of Cancel button
@@ -617,7 +723,7 @@ var Page: PageMap = {
     next: {x: 766, y: 1444}   // OK button
   },
   Confirm2025PurchaseCapsulePage: {
-    name: 'ConfirmPurchasePage',
+    name: PageName.ConfirmPurchasePage,
     colors: [
       {x: 200, y: 1464, r: 247, g: 178, b: 8, match: true, threshold: 30},      // left of Cancel button
       {x: 426, y: 1464, r: 247, g: 178, b: 8, match: true, threshold: 30},      // right of Cancel button
@@ -633,7 +739,7 @@ var Page: PageMap = {
     next: {x: 766, y: 1464}   // OK button
   },
   TapOpenPageBox: {
-    name: 'TapOpenPage',
+    name: PageName.TapOpenPage,
     colors: [
       {x: 641, y: 328, r: 255, g: 255, b: 231, match: true, threshold: 30},
       {x: 641, y: 243, r: 255, g: 255, b: 247, match: true, threshold: 30},
@@ -647,7 +753,7 @@ var Page: PageMap = {
     next: {x: 500, y: 1600}
   },
   TapOpenPageCapsule: {
-    name: 'TapOpenPage',
+    name: PageName.TapOpenPage,
     colors: [
       {x: 70, y: 560, r: 24, g: 85, b: 132, match: true, threshold: 30},
       {x: 899, y: 777, r: 137, g: 117, b: 148, match: true, threshold: 30},
@@ -662,7 +768,7 @@ var Page: PageMap = {
     next: {x: 500, y: 1600}
   },
   TapOpenPageCapsuleDeprecated: {
-    name: 'TapOpenPageDeprecated',
+    name: PageName.TapOpenPageDeprecated,
     colors: [
       {x: 620, y: 328, r: 205, g: 13, b: 34, match: true, threshold: 30},
       {x: 641, y: 243, r: 146, g: 0, b: 0, match: true, threshold: 30},
@@ -676,7 +782,7 @@ var Page: PageMap = {
     next: {x: 500, y: 1600}
   },
   BoxPurchasedPage: {
-    name: 'BoxPurchasedPage',
+    name: PageName.BoxPurchasedPage,
     colors: [
       {x: 156, y: 1077, r: 33, g: 195, b: 231, match: true, threshold: 30},
       {x: 48, y: 998, r: 24, g: 52, b: 82, match: true, threshold: 30},
@@ -692,7 +798,7 @@ var Page: PageMap = {
     next: {x: 550, y: 1630}   // Close button
   },
   PremiumPlusBoxPurchasedPage: {
-    name: 'BoxPurchasedPage',
+    name: PageName.BoxPurchasedPage,
     colors: [
       {x: 156, y: 1077, r: 33, g: 195, b: 231, match: true, threshold: 30},
       {x: 48, y: 998, r: 33, g: 66, b: 99, match: true, threshold: 30},
@@ -708,7 +814,7 @@ var Page: PageMap = {
     next: {x: 550, y: 1630}   // Close button
   },
   GamePause: {
-    name: 'GamePause',
+    name: PageName.GamePause,
     colors: [
       {x: 165, y: 1077, r: 234, g: 173, b:   7, match: true, threshold: 80},
       {x: 586, y: 1080, r: 239, g: 174, b:   7, match: true, threshold: 80},
@@ -720,7 +826,7 @@ var Page: PageMap = {
     next: {x: 561, y: 1422}
   },
   GamePlaying480x800: {
-    name: 'GamePlaying',
+    name: PageName.GamePlaying,
     colors: [
       {x: 916, y: 198, r: 253, g: 216, b: 0, match: true, threshold: 80}, // above pause
       {x: 916, y: 318, r: 241, g: 161, b: 8, match: true, threshold: 80}, // below pause
@@ -730,7 +836,7 @@ var Page: PageMap = {
     next: {x: 986, y: 273}
   },
   GamePlayingLastSeconds: {
-    name: 'GamePlaying',
+    name: PageName.GamePlaying,
     colors: [
       {x: 916, y: 198, r: 181, g: 207, b: 74, match: true, threshold: 80}, // above pause
       {x: 916, y: 318, r: 190, g: 174, b: 57, match: true, threshold: 80}, // below pause
@@ -740,7 +846,7 @@ var Page: PageMap = {
     next: {x: 986, y: 273}
   },
   GamePlaying: {
-    name: 'GamePlaying',
+    name: PageName.GamePlaying,
     colors: [
       {x: 916, y: 198, r: 230, g: 200, b: 20, match: true, threshold: 80}, // above pause
       {x: 916, y: 318, r: 214, g: 191, b: 28, match: true, threshold: 80}, // below pause
@@ -750,7 +856,7 @@ var Page: PageMap = {
     next: {x: 986, y: 273}
   },
   GamePlaying2: {
-    name: 'GamePlaying',
+    name: PageName.GamePlaying,
     colors: [
       {x: 980, y: 258, r: 190, g: 244, b: 70, match: true, threshold: 80}, // right of pause
       {x: 852, y: 258, r: 244, g: 197, b: 20, match: true, threshold: 80}, // left of pause
@@ -767,7 +873,7 @@ var Page: PageMap = {
   // only a last-resort hint -- see dialogs.ts for why they cannot be trusted.
   // The matched variant's key is still logged, so detection stays diagnosable.
   RootDetectionLdp1080p480dpiEn: {
-    name: 'RootDetection',
+    name: PageName.RootDetection,
     colors: [
       {x: 80, y: 690, r: 255 , g: 255, b: 255, match: true, threshold: 25},
       {x: 70, y: 680,  r: 255 , g: 255, b: 255, match: false, threshold: 25},
@@ -779,7 +885,7 @@ var Page: PageMap = {
     onDetect: switchToStartupMode
   },
   RootDetectionLdp1080p480dpiJp: {
-    name: 'RootDetection',
+    name: PageName.RootDetection,
     colors: [
       {x: 80, y: 635, r: 255 , g: 255, b: 255, match: true, threshold: 25},
       {x: 70, y: 625, r: 255 , g: 255, b: 255, match: false, threshold: 25},
@@ -791,7 +897,7 @@ var Page: PageMap = {
     onDetect: switchToStartupMode
   },
   RootDetectionLdp480x800x160dpiEn: {
-    name: 'RootDetection',
+    name: PageName.RootDetection,
     colors: [
       {x: 90, y: 780, r: 253 , g: 253, b: 253, match: true, threshold: 25},
       {x: 65, y: 745, r: 255 , g: 255, b: 255, match: false, threshold: 25},
@@ -803,7 +909,7 @@ var Page: PageMap = {
     onDetect: switchToStartupMode
   },
   RootDetectionNox1080p360dpiEn: {
-    name: 'RootDetection',
+    name: PageName.RootDetection,
     colors: [
       {x: 135, y: 795, r: 255 , g: 255, b: 255, match: true, threshold: 25},
       {x: 125, y: 785, r: 255 , g: 255, b: 255, match: false, threshold: 25},
@@ -815,7 +921,7 @@ var Page: PageMap = {
     onDetect: switchToStartupMode
   },
   RootDetectionNox480x800x160dpiJp: {
-    name: 'RootDetection',
+    name: PageName.RootDetection,
     colors: [
       {x: 85, y: 735, r: 255 , g: 255, b: 255, match: true, threshold: 25},
       {x: 75, y: 725, r: 255 , g: 255, b: 255, match: false, threshold: 25},
@@ -827,7 +933,7 @@ var Page: PageMap = {
     onDetect: switchToStartupMode
   },
   RootDetectionNox480x800x160dpiEn: {
-    name: 'RootDetection',
+    name: PageName.RootDetection,
     colors: [
       {x: 85, y: 760, r: 255 , g: 255, b: 255, match: true, threshold: 25},
       {x: 75, y: 750, r: 255 , g: 255, b: 255, match: false, threshold: 25},
@@ -839,7 +945,7 @@ var Page: PageMap = {
     onDetect: switchToStartupMode
   },
   RootDetectionSamsungA20En: {
-    name: 'RootDetection',
+    name: PageName.RootDetection,
     colors: [
       {x: 60, y: 440, r: 255 , g: 255, b: 255, match: true, threshold: 25},
       {x: 50, y: 440, r: 255 , g: 255, b: 255, match: false, threshold: 25},
@@ -861,7 +967,7 @@ var Page: PageMap = {
   // position. The panel/scrim shape is coarse on purpose -- the tap that follows
   // is located and verified by dismissSystemDialog(), not by these coordinates.
   RootDetection1080pEn: {
-    name: 'RootDetection',
+    name: PageName.RootDetection,
     colors: [
       {x: 950, y:  868, r: 255, g: 255, b: 255, match: true,  threshold: 25}, // white dialog interior (top-right)
       {x: 540, y: 1100, r: 255, g: 255, b: 255, match: true,  threshold: 25}, // white dialog interior (below buttons)
@@ -873,7 +979,7 @@ var Page: PageMap = {
     onDetect: switchToStartupMode
   },
   MagicalTime: {
-    name: 'MagicalTime',
+    name: PageName.MagicalTime,
     colors: [
       {x: 817, y: 507, r: 244, g: 249, b: 243, match: true, threshold:  80},
       {x: 594, y: 857, r: 248, g: 102, b: 121, match: true, threshold: 100},
@@ -884,7 +990,7 @@ var Page: PageMap = {
     next: {x: 856, y: 1221}
   },
   OutOfMedals: {
-    name: 'OutOfMedals',
+    name: PageName.OutOfMedals,
     colors: [
       {x: 127, y:  873, r:  74, g:  74, b:  74, match: true, threshold: 80},  // mickey left-side ear
       {x: 186, y:  898, r: 255, g: 213, b: 188, match: true, threshold: 80},  // mickey face
@@ -897,7 +1003,7 @@ var Page: PageMap = {
     next: {x: 300, y: 1080}
   },
   NetworkDisable: {
-    name: 'NetworkDisable',
+    name: PageName.NetworkDisable,
     colors: [
       {x: 478, y: 1080, r: 236, g:  94, b: 116, match: true, threshold: 80},
       {x: 932, y: 1077, r: 232, g: 171, b:   5, match: true, threshold: 80}
@@ -906,7 +1012,7 @@ var Page: PageMap = {
     next: {x: 885, y: 1084}
   },
   NetworkTimeout: {
-    name: 'NetworkTimeout',
+    name: PageName.NetworkTimeout,
     colors: [
       {x: 530, y: 590, r: 33, g: 197, b: 234, match: true, threshold: 80},
       {x: 530, y: 620, r: 59, g: 94, b: 148, match: true, threshold: 80},
@@ -919,7 +1025,7 @@ var Page: PageMap = {
     next: {x: 885, y: 1084}
   },
   FriendInfo: { // FriendInfo of Friend Page, SocailAccount of Setting Page
-    name: 'FriendInfo',
+    name: PageName.FriendInfo,
     colors: [
       {x: 565, y: 576, r:  31, g: 190, b: 220, match: true, threshold: 80},
       {x: 547, y: 1195, r:  27, g: 192, b: 222, match: true, threshold: 80},
@@ -929,7 +1035,7 @@ var Page: PageMap = {
     next: {x: 576, y: 1408}
   },
   LevelUp: { // LevelUp and RankUp
-    name: 'LevelUp',
+    name: PageName.LevelUp,
     colors: [
       {x: 140, y: 1656, r: 233, g: 175, b: 6, match: true, threshold: 80}, // left of the close button
       {x: 450, y: 1656, r: 233, g: 175, b: 6, match: true, threshold: 80}, // right of the close button
@@ -940,7 +1046,7 @@ var Page: PageMap = {
     next: {x: 300, y: 1660}
   },
   HighScore: {
-    name: 'HighScore',
+    name: PageName.HighScore,
     colors: [
       {x: 576, y: 1325, r: 238, g: 187, b:  10, match: true, threshold: 80}, // top yellow of close button
       {x: 576, y: 1082, r:  33, g: 194, b: 231, match: true, threshold: 80}, // bottom light blue of highscore cell
@@ -951,7 +1057,7 @@ var Page: PageMap = {
     next: {x: 576, y: 1325}
   },
   ClosePage: { // including EventPage, MyInfo, SettingPage, others
-    name: 'ClosePage', // the close button at center bottom
+    name: PageName.ClosePage, // the close button at center bottom
     colors: [
       {x: 540, y: 1588, r: 233, g: 180, b: 10, match: true, threshold: 80} // top right of the close button
     ],
@@ -968,7 +1074,7 @@ var Page: PageMap = {
   //   next: {x: 176, y: 1592}
   // },
   ReceiveSkillTicket: {
-    name: 'ReceiveSkillTicket',
+    name: PageName.ReceiveSkillTicket,
     colors: [
       {x: 405, y: 806, r: 240, g: 155, b: 20, match: true, threshold: 80},
       {x: 488, y: 839, r: 244, g: 164, b: 23, match: true, threshold: 80},
@@ -984,7 +1090,7 @@ var Page: PageMap = {
     next: {x: 874, y: 1098}
   },
   ReceivePremiumTicket: {
-    name: 'ReceivePremiumTicket',
+    name: PageName.ReceivePremiumTicket,
     colors: [
       {x: 405, y: 806, r: 216, g: 20, b: 25, match: true, threshold: 80},
       {x: 488, y: 839, r: 208, g: 20, b: 23, match: true, threshold: 80},
@@ -1000,7 +1106,7 @@ var Page: PageMap = {
     next: {x: 874, y: 1098}
   },
   ReceiveHeartWithoutCoins: {
-    name: 'ReceiveHeartWithoutCoins',
+    name: PageName.ReceiveHeartWithoutCoins,
     colors: [
       {x: 360, y: 570, r: 33, g: 198, b: 233, match: true, threshold: 30},
       {x: 400, y: 620, r: 61, g: 94, b: 147, match: true, threshold: 30},
@@ -1014,7 +1120,7 @@ var Page: PageMap = {
     next: {x: 860, y: 1100}
   },
   ExtraUpdateJp: {
-    name: 'ExtraUpdate',
+    name: PageName.ExtraUpdate,
     colors: [
       {x: 104, y:  556, r:  36, g: 204, b: 239, match: true, threshold: 80},  // light blue top left
       {x: 104, y: 1194, r:  36, g: 204, b: 239, match: true, threshold: 80},  // light blue bottom left
@@ -1031,7 +1137,7 @@ var Page: PageMap = {
     next: {x: 770, y: 1100}
   },
   ExtraUpdateEn: {
-    name: 'ExtraUpdate',
+    name: PageName.ExtraUpdate,
     colors: [
       {x: 104, y:  556, r:  36, g: 204, b: 239, match: true, threshold: 80},  // light blue top left
       {x: 104, y: 1194, r:  36, g: 204, b: 239, match: true, threshold: 80},  // light blue bottom left
@@ -1048,7 +1154,7 @@ var Page: PageMap = {
     next: {x: 770, y: 1100}
   },
   RubyResetDifficulty: {
-    name: 'RubyResetDifficulty',
+    name: PageName.RubyResetDifficulty,
     colors: [
       {x: 594, y:  972, r: 247, g:  81, b:  82, match: true, threshold: 80},  // red arrow between numbers
       {x: 610, y: 1166, r: 189, g:   0, b:  41, match: true, threshold: 80},  // ruby next to "10"
@@ -1059,10 +1165,10 @@ var Page: PageMap = {
     back: {x: 425, y: 1275},
     next: {x: 867, y: 1270}
   }
-};
+} satisfies PageMap;
 
 // page callbacks (this = actual Tsum instance)
-function switchToStartupMode() {
+function switchToStartupMode(this: Tsum) {
   this.isStartupPhase = true;
 }
 

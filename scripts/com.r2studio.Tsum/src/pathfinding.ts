@@ -1,16 +1,21 @@
 // Utils for Tsum
 
-function usingTimeString(startTime) {
+function usingTimeString(startTime: number): number {
   return Date.now() - startTime;
 }
 
-function getDistance(t1, t2) {
+/** Squared distance -- the callers only ever compare it, so the sqrt is skipped. */
+function getDistance(t1: Point, t2: Point): number {
   //return Math.sqrt((t1.x - t2.x) * (t1.x - t2.x) + (t1.y - t2.y) * (t1.y - t2.y));
   return (t1.x - t2.x) * (t1.x - t2.x) + (t1.y - t2.y) * (t1.y - t2.y);
 }
 
-function buildTsumNeighbors(tsums, maxDistSq) {
-  const neighbors = [];
+/**
+ * Adjacency list over one colour group: `neighbors[i]` holds the indices of the
+ * tsums within linking range of `tsums[i]`.
+ */
+function buildTsumNeighbors(tsums: Point[], maxDistSq: number): number[][] {
+  const neighbors: number[][] = [];
   for (let i = 0; i < tsums.length; i++) {
     neighbors.push([]);
   }
@@ -25,18 +30,19 @@ function buildTsumNeighbors(tsums, maxDistSq) {
   return neighbors;
 }
 
-function findTsumComponents(neighbors) {
+/** The connected components of the adjacency list, each a list of node indices. */
+function findTsumComponents(neighbors: number[][]): number[][] {
   const n = neighbors.length;
-  const seen = new Array(n);
+  const seen: boolean[] = new Array(n);
   for (let i = 0; i < n; i++) { seen[i] = false; }
-  const components = [];
+  const components: number[][] = [];
   for (let s = 0; s < n; s++) {
     if (seen[s]) { continue; }
-    const comp = [];
+    const comp: number[] = [];
     const stack = [s];
     seen[s] = true;
     while (stack.length > 0) {
-      const v = stack.pop();
+      const v = stack.pop()!;  // guarded by the loop condition
       comp.push(v);
       const nbrs = neighbors[v];
       for (let k = 0; k < nbrs.length; k++) {
@@ -62,24 +68,28 @@ function findTsumComponents(neighbors) {
 // stopping condition rather than a post-hoc trim: once a chain of that length
 // exists there is nothing better to find, so the search returns immediately —
 // which is where the speed-up of a short cap comes from.
-function findLongestTsumPath(neighbors, comp, budgetPerStart, maxLen) {
-  if (maxLen === undefined || !(maxLen > 0)) { maxLen = Infinity; }
+function findLongestTsumPath(
+    neighbors: number[][], comp: number[], budgetPerStart: number, maxLen?: number): number[] {
+  // Bound to a const because `dfs` closes over it; a narrowing on the parameter
+  // itself would not survive into the closure.
+  const cap: number = (maxLen === undefined || !(maxLen > 0)) ? Infinity : maxLen;
   const n = neighbors.length;
-  const visited = new Array(n);
-  const path = [];
-  const state = { steps: 0, budget: 0, bestLen: 0, best: null };
+  const visited: boolean[] = new Array(n);
+  const path: number[] = [];
+  const state: { steps: number; budget: number; bestLen: number; best: number[] | null } =
+      { steps: 0, budget: 0, bestLen: 0, best: null };
 
   // Order each adjacency list by ascending degree so the search tries the most
   // constrained branches first — dead ends prune quickly and leaves get
   // consumed before they become unreachable.
-  const sortedNbrs = new Array(n);
+  const sortedNbrs: number[][] = new Array(n);
   for (let i = 0; i < n; i++) {
     const arr = neighbors[i].slice();
     arr.sort(function(a, b) { return neighbors[a].length - neighbors[b].length; });
     sortedNbrs[i] = arr;
   }
 
-  function dfs(idx) {
+  function dfs(idx: number): void {
     state.steps++;
     visited[idx] = true;
     path.push(idx);
@@ -87,12 +97,12 @@ function findLongestTsumPath(neighbors, comp, budgetPerStart, maxLen) {
       state.bestLen = path.length;
       state.best = path.slice();
     }
-    if (state.steps < state.budget && state.bestLen < maxLen) {
+    if (state.steps < state.budget && state.bestLen < cap) {
       const nbrs = sortedNbrs[idx];
       for (let k = 0; k < nbrs.length; k++) {
         if (!visited[nbrs[k]]) {
           dfs(nbrs[k]);
-          if (state.steps >= state.budget || state.bestLen >= maxLen) { break; }
+          if (state.steps >= state.budget || state.bestLen >= cap) { break; }
         }
       }
     }
@@ -100,7 +110,7 @@ function findLongestTsumPath(neighbors, comp, budgetPerStart, maxLen) {
     path.pop();
   }
 
-  function runDfs(startIdx, prefilled) {
+  function runDfs(startIdx: number, prefilled: boolean[] | null): number[] {
     for (let i = 0; i < n; i++) { visited[i] = prefilled ? prefilled[i] : false; }
     visited[startIdx] = false;
     path.length = 0;
@@ -117,26 +127,26 @@ function findLongestTsumPath(neighbors, comp, budgetPerStart, maxLen) {
   const starts = comp.slice();
   starts.sort(function(a, b) { return neighbors[a].length - neighbors[b].length; });
 
-  let globalBest = [];
+  let globalBest: number[] = [];
   const maxStarts = Math.min(starts.length, 6);
   for (let s = 0; s < maxStarts; s++) {
     const candidate = runDfs(starts[s], null);
     if (candidate.length > globalBest.length) {
       globalBest = candidate;
     }
-    if (globalBest.length >= comp.length || globalBest.length >= maxLen) { break; }
+    if (globalBest.length >= comp.length || globalBest.length >= cap) { break; }
   }
 
   // Bidirectional extension: if the chain doesn't cover the component, try to
   // extend from each endpoint into the remaining nodes. Recovers chains when
   // DFS started from a node that wasn't a true endpoint.
-  if (globalBest.length > 0 && globalBest.length < comp.length && globalBest.length < maxLen) {
-    const inChain = new Array(n);
+  if (globalBest.length > 0 && globalBest.length < comp.length && globalBest.length < cap) {
+    const inChain: boolean[] = new Array(n);
     for (let i = 0; i < n; i++) { inChain[i] = false; }
     for (let i = 0; i < globalBest.length; i++) { inChain[globalBest[i]] = true; }
 
     for (let e = 0; e < 2; e++) {
-      const room = maxLen - globalBest.length;
+      const room = cap - globalBest.length;
       if (room <= 0) { break; }
       const ep = (e === 0) ? globalBest[0] : globalBest[globalBest.length - 1];
       const extension = runDfs(ep, inChain);
@@ -158,9 +168,11 @@ function findLongestTsumPath(neighbors, comp, budgetPerStart, maxLen) {
   return globalBest;
 }
 
-function calculatePaths(board, logs, myTsumIdx, prioritizeMyTsum) {
+function calculatePaths(
+    board: BoardPoint[], logs: typeof Logs,
+    myTsumIdx: number, prioritizeMyTsum: boolean): TsumPath[] {
   const startTime = Date.now();
-  const groups = {};
+  const groups: { [tsumIdx: string]: BoardPoint[] } = {};
   for (const t in board) {
     const tsum = board[t];
     if (groups[tsum.tsumIdx] === undefined) {
@@ -218,7 +230,7 @@ function calculatePaths(board, logs, myTsumIdx, prioritizeMyTsum) {
   // "Chains per board scan" are tuned against. Built lazily: log() only calls
   // the thunk when debug logs are on.
   debug(logs.pathLengths, function() {
-    const lens = [];
+    const lens: number[] = [];
     for (let i = 0; i < paths.length; i++) { lens.push(paths[i].length); }
     return lens.join(',');
   });
@@ -229,7 +241,7 @@ function calculatePaths(board, logs, myTsumIdx, prioritizeMyTsum) {
 // same shape calculatePaths returns. Used by Click Assist: the user points at a
 // tsum, this works out which of its color-mates are connected to it and in what
 // order to draw them.
-function findChainAtTouch(board, touchX, touchY) {
+function findChainAtTouch(board: BoardPoint[], touchX: number, touchY: number): TsumPath | null {
   if (!board || board.length === 0) { return null; }
 
   let nearestAllIdx = -1;
@@ -247,7 +259,7 @@ function findChainAtTouch(board, touchX, touchY) {
   if (nearestAllIdx === -1 || nearestAllDistSq > maxTouchDistSq) { return null; }
 
   const tsumIdx = board[nearestAllIdx].tsumIdx;
-  const group = [];
+  const group: BoardPoint[] = [];
   let nearestInGroup = -1;
   for (let i = 0; i < board.length; i++) {
     if (board[i].tsumIdx === tsumIdx) {
@@ -264,13 +276,13 @@ function findChainAtTouch(board, touchX, touchY) {
   // Flood fill from the touched tsum: only the component it actually belongs to
   // can be linked, however many same-colored tsums sit elsewhere on the board.
   const n = group.length;
-  const seen = new Array(n);
+  const seen: boolean[] = new Array(n);
   for (let i = 0; i < n; i++) { seen[i] = false; }
-  const queue = [nearestInGroup];
+  const queue: number[] = [nearestInGroup];
   seen[nearestInGroup] = true;
-  const comp = [];
+  const comp: number[] = [];
   while (queue.length > 0) {
-    const v = queue.shift();
+    const v = queue.shift()!;  // guarded by the loop condition
     comp.push(v);
     const nbrs = neighbors[v];
     for (let k = 0; k < nbrs.length; k++) {
@@ -297,8 +309,8 @@ function findChainAtTouch(board, touchX, touchY) {
   return pathPoints;
 }
 
-function convertTo2DArray(arr, size) {
-  const result = [];
+function convertTo2DArray<T>(arr: T[], size: number): T[][] {
+  const result: T[][] = [];
   for (let i = 0; i < arr.length; i = i + size) {
     result.push(arr.slice(i, i + size));
   }
@@ -309,9 +321,9 @@ function convertTo2DArray(arr, size) {
 // come out of the same grayscale Hough pass at a larger radius. Runs on the
 // board capture the scan already holds, so locating them costs no screenshot --
 // which is the point: the taps have to land while the chain is still going off.
-function findGameBubbles(img) {
+function findGameBubbles(img: NativeImage): GameBubble[] {
   const cfg = GameBubbleConfig;
-  let grayImg = null;
+  let grayImg: NativeImage | null = null;
   try {
     const tmpImg = clone(img);
     grayImg = bgrToGray(tmpImg);
@@ -321,7 +333,7 @@ function findGameBubbles(img) {
     // pathfinder (those are shifted to a tsum's top-left corner).
     const found = houghCircles(grayImg, 3, 1, cfg.minDist, cfg.param1, cfg.param2,
                                cfg.minRadius, cfg.maxRadius);
-    const out = [];
+    const out: GameBubble[] = [];
     for (const k in found) {
       out.push({x: found[k].x, y: found[k].y, r: found[k].r});
     }
@@ -331,13 +343,13 @@ function findGameBubbles(img) {
   }
 }
 
-function findTsums(img) {
+function findTsums(img: NativeImage): TsumPoint[] {
   // Every native image allocated here must be released even when a native
   // call throws mid-scan: the task controller swallows task errors and
   // retries, so a leak on this hot path would silently recur on every scan.
   const hsvImg = clone(img);
-  let grayImg = null;
-  let debugImg = null;
+  let grayImg: NativeImage | null = null;
+  let debugImg: NativeImage | null = null;
   try {
     // Circle detection runs on a plain grayscale copy, NOT a colour mask. The
     // old HSV outRange masks filtered blue tsums out before detection, so their
@@ -364,13 +376,13 @@ function findTsums(img) {
     releaseImage(grayImg);
     grayImg = null;
 
-    if (ts.debug) {
+    if (ts!.debug) {
       debugImg = clone(img);
       for (const dk in points) {
         const pt = points[dk];
         drawCircle(debugImg, pt.x, pt.y, minRadius, 255, 0, 0, 1);
       }
-      saveImage(debugImg, ts.storagePath + "/tmp/" + ts.runTimes + "-detectedHoughCircles.jpg");
+      saveImage(debugImg, ts!.storagePath + "/tmp/" + ts!.runTimes + "-detectedHoughCircles.jpg");
       releaseImage(debugImg);
       debugImg = null;
     }
@@ -378,7 +390,7 @@ function findTsums(img) {
     // Heavy blur to smear out face features, then a 5-pixel cross average at
     // the circle center.
     smooth(hsvImg, 1, 22);
-    const results = [];
+    const results: TsumPoint[] = [];
     for (const k in points) {
       const p = points[k];
       let hsv1, hsv2, hsv3, hsv4, hsv5;
@@ -393,8 +405,8 @@ function findTsums(img) {
       results.push({x: p.x, y: p.y, z: p.r, b: avgb, g: avgg, r: avgr});
     }
 
-    if (ts.debug) {
-      saveImage(hsvImg, ts.storagePath + "/tmp/" + ts.runTimes + "-hsvImg.jpg");
+    if (ts!.debug) {
+      saveImage(hsvImg, ts!.storagePath + "/tmp/" + ts!.runTimes + "-hsvImg.jpg");
     }
 
     return results;
@@ -407,7 +419,7 @@ function findTsums(img) {
 
 // Distance between two sampled tsum colors. The image is HSV at this point,
 // so b/g/r hold H/S/V.
-function distance3D(p1, p2) {
+function distance3D(p1: Color, p2: Color): number {
   let d0 = Math.sqrt((p1.b-p2.b)*(p1.b-p2.b) + (p1.g-p2.g)*(p1.g-p2.g) + (p1.r-p2.r)*(p1.r-p2.r));
   if (Math.abs(p1.b - p2.b) < 20) { d0 -= 10; }
   if (Math.abs(p1.g - p2.g) < 20) { d0 -= 10; }
@@ -421,17 +433,17 @@ function distance3D(p1, p2) {
 // the merge distance (common once blue variants are detected), first-match
 // could bleed a point into the wrong colour and drift both means; nearest-match
 // keeps the assignment stable.
-function classifyTsums(points) {
+function classifyTsums(points: TsumPoint[]): TsumCluster[] {
   const threshold = 15;
   if (!Array.isArray(points) || points.length === 0) {
     return [];
   }
 
-  const clusters = [];
+  const clusters: TsumCluster[] = [];
 
   for (let i = 0; i < points.length; i++) {
     const p = points[i];
-    let bestCluster = null;
+    let bestCluster: TsumCluster | null = null;
     let minDistance = Infinity;
 
     // Find the closest existing cluster within threshold.

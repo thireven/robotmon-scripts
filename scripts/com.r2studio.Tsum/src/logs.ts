@@ -1,5 +1,10 @@
 // predefined log messages
-var Logs: StringMap = {
+//
+// Deliberately un-annotated: the inferred type is the exact key set, which is
+// what makes `this.logs.recognitionStart` resolve to the message below and a
+// misspelling an error. `LogsTW` is then typed as `typeof Logs`, so a
+// translation that gains or loses a key stops the build.
+var Logs = {
   start: '[TsumTsum] Start',
   stop: '[TsumTsum] Stop',
   sendMessage: 'Send Message...',
@@ -62,7 +67,7 @@ var Logs: StringMap = {
   endUnlockLevel: 'Finished unlocking Tsum levels'
 }
 
-var LogsTW: StringMap = {
+var LogsTW: typeof Logs = {
   start: '[TsumTsum] 啟動',
   stop: '[TsumTsum] 停止',
   sendMessage: '送出訊息中...',

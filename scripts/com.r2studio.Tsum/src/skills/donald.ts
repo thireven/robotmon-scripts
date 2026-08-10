@@ -4,7 +4,7 @@
 // times over. A tap that lands on nothing costs nothing.
 
 registerSkill({
-  types: ['block_donald_s', 'block_donaldx_s'],
+  types: [SkillType.Donald, SkillType.HolidayDonald],
   afterActivate: function(ts) {
     for (let pass = 0; pass < 3; pass++) {
       for (let bx = Button.gameBubblesFrom.x - 40; bx <= Button.gameBubblesTo.x + 40; bx += 150) {

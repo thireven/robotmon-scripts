@@ -4,7 +4,7 @@
 // lets the play loop fire these blind between chains (see Tsum.link).
 
 registerSkill({
-  types: ['burst'],
+  types: [SkillType.Burst],
   bareTapActivates: true,
   afterActivate: function(ts) {
     skillRandomizeAndWait(ts);
@@ -13,7 +13,7 @@ registerSkill({
 
 // Same skill, on a board that leaves bubbles behind: sweep them after the clear.
 registerSkill({
-  types: ['burst_bubbles'],
+  types: [SkillType.BurstBubbles],
   bareTapActivates: true,
   afterActivate: function(ts) {
     skillRandomizeAndWait(ts);

@@ -106,10 +106,10 @@ Tsum.prototype.taskClickAssist = function() {
       if (sinceLastPageCheck >= pageCheckEvery) {
         sinceLastPageCheck = 0;
         let page = this.findPage(1, 1500);
-        if (page !== 'GamePlaying' && page !== 'GamePause') {
+        if (page !== PageName.GamePlaying && page !== PageName.GamePause) {
           this.sleep(500);
           page = this.findPage(1, 1500);
-          if (page !== 'GamePlaying' && page !== 'GamePause') {
+          if (page !== PageName.GamePlaying && page !== PageName.GamePause) {
             log(this.logs.gameOver);
             break;
           }

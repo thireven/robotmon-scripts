@@ -1,4 +1,4 @@
-function start(settings) {
+function start(settings: Settings) {
   ts = new Tsum(settings['jpVersion'], settings['specialScreenRatio'], settings['langTaiwan'] ? LogsTW : Logs);
   ts.settings = settings
   log(ts.logs.start);
@@ -49,8 +49,8 @@ function start(settings) {
   if (ts.recordReceive) {
     ts.readRecord();
   }
-  if (ts.record['hearts_count'] === undefined) {
-    ts.record['hearts_count'] = {
+  if (ts.record[RecordKey.HeartsCount] === undefined) {
+    ts.record[RecordKey.HeartsCount] = {
       receivedCount: 0,
       sentCount: 0
     };
@@ -121,11 +121,13 @@ function stop() {
   ts = undefined;
 }
 
-function genRecordTable() {
+// Renders record.txt as a standalone HTML table. Reached from the settings UI
+// via runScriptCallback('genRecordTable();', ...), so it has to stay a global.
+function genRecordTable(): string {
   console.log("Generate Record...");
   const recordFile = getStoragePath() + "/tsum_record/record.txt";
   const txt = readFile(recordFile);
-  let record = {};
+  let record: TsumRecord = {};
   if (txt !== undefined && txt !== "") {
     try {
       record = JSON.parse(txt);
@@ -137,13 +139,13 @@ function genRecordTable() {
   }
 
   // enhance records with total and average hearts per filename
-  const dayMapCount = {};
-  const renderRecords = [];
+  const dayMapCount: { [dayTime: number]: number } = {};
+  const renderRecords: SenderRecord[] = [];
   // Reused across the sibling loops below (previously function-scoped vars).
   let filename: string, dayTime: string, j: number;
   for (filename in record) {
     (function (filename) {
-      if (filename !== "hearts_count") {
+      if (filename !== RecordKey.HeartsCount) {
         let totalDay = 0;
         let totalCount = 0;
         const recordElement = record[filename];
@@ -172,18 +174,20 @@ function genRecordTable() {
 
   // sort records descending by total
   renderRecords.sort(function (a, b) {
-    return b.all - a.all;
+    // `all` and `filename` are stamped onto every entry by the loop above, so
+    // they are present here even though the persisted shape has them optional.
+    return b.all! - a.all!;
   });
 
   // create sorted dayTime array
-  const dayTimesSorted = [];
+  const dayTimesSorted: string[] = [];
   for (dayTime in dayMapCount) {
     if (dayMapCount.hasOwnProperty(dayTime)) {
       dayTimesSorted.push(dayTime);
     }
   }
   dayTimesSorted.sort(function (a, b) {
-    return a - b;
+    return +a - +b;
   });
 
   // render records
@@ -197,7 +201,7 @@ function genRecordTable() {
   html += "</tr>";
   for (let i = 0; i < renderRecords.length; i += 1) {
     const renderRecord = renderRecords[i];
-    filename = renderRecord.filename;
+    filename = renderRecord.filename!;
     html += "<tr>";
     // user image
     const filePath = getStoragePath()+"/tsum_record/" + filename;
@@ -215,7 +219,10 @@ function genRecordTable() {
     let tmpHtml = "";
     for (j = 0; j < dayTimesSorted.length ; j++) {
       dayTime = dayTimesSorted[j];
-      const dayCount = parseInt(renderRecord.receiveCounts[dayTime]) || 0;
+      // The counts are written as numbers, but parseInt has always guarded this
+      // read against a hand-edited record.txt; String() keeps that coercion
+      // explicit rather than relying on parseInt's own.
+      const dayCount = parseInt(String(renderRecord.receiveCounts[dayTime])) || 0;
       tmpHtml += '<td>' + dayCount + '</td>';
 
       totalDay++;
@@ -240,7 +247,7 @@ function genRecordTable() {
     const date = new Date(+dayTime * (24 * 60 * 60 * 1000));
     html += "<tr>";
     html += "<td>" + getDayTimeString(date) + "</td>";
-    html += "<td>" + dayMapCount[dayTime] + "</td>";
+    html += "<td>" + dayMapCount[+dayTime] + "</td>";
     html += "</tr>";
   }
   html += "</table>";
@@ -251,17 +258,17 @@ function genRecordTable() {
   return "Download: " + getStoragePath()+"/tsum_record to PC" + "<br />Open: " + recordName;
 }
 
-function getDayTimeString(d) {
+function getDayTimeString(d: Date): string {
   return (d.getMonth()+1) + '/' + d.getDate();
 }
 
-function getRecordFilename() {
+function getRecordFilename(): string {
   const d = new Date();
   return 'recordTable_' + d.getFullYear() + '-' + (d.getMonth()+1) + '-' + d.getDate() + '_' + d.getHours() + '-' + d.getMinutes() + '-' + d.getSeconds() + '.html';
 }
 
 // input: rgb in [0,255], out: h in [0,360) and s,v in [0,100]
-function rgb2hsv(rgb) {
+function rgb2hsv(rgb: Color): { h: number; s: number; v: number } {
   const r = rgb.r / 255;
   const g = rgb.g / 255;
   const b = rgb.b / 255;

@@ -7,7 +7,9 @@
     "build": "./build.sh",
     "build:ps": "powershell -ExecutionPolicy Bypass -File ./build.ps1",
     "buildAndAdb": "./build.sh -a true",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.settings.json --noEmit",
+    "typecheck:game": "tsc --noEmit",
+    "typecheck:settings": "tsc -p tsconfig.settings.json --noEmit",
     "adb": "adb push dist/index.* sdcard/Download/Robotmon/scripts/com.r2studio.Tsum/"
   },
   "keywords": [],

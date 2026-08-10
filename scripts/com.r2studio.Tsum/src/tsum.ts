@@ -1,106 +1,210 @@
-function Tsum(isJP, detect, logs) {
-  this.debug = false;
-  this.autoLaunch = false;
-  this.isRunning = true;
-  this.isStartupPhase = true;
-  this.runTimes = 0;
-  this.myTsum = '';
-  this.myTsumColor = null;
-  this.myTsumIdx = -1;
-  this.storagePath = getStoragePath();
-  // screen size config
-  /** @type {{width: number, height: number}}  */
-  const size = getScreenSize();
-  this.originScreenWidth = size.width;
-  this.originScreenHeight = size.height;
-  this.screenHeight = size.height;
-  this.screenWidth = size.width;
-  this.gameOffsetX = 0;
-  this.gameOffsetY = 0;
-  this.gameHeight = 0;
-  this.gameWidth = 0;
-  this.resizeRatio = Math.max(1, this.screenWidth / 360); // normalize page screenshots to 360px width
-  this.captureGameRatio = 0;
-  // playing game screen size config
-  this.playOffsetX = 0;
-  this.playOffsetY = 0;
-  this.playHeight = 0;
-  this.playWidth = 0;
-  this.playResizeWidth = Config.screenResize;
-  this.playResizeHeight = Config.screenResize;
+// The 87 methods attached below and in the other six files are declared in
+// `interface Tsum` (globals.d.ts), which merges with this class. That is what
+// types `this` and the parameters inside every `Tsum.prototype.NAME = function`
+// assignment -- they need no annotations of their own.
+//
+// A class rather than a constructor function purely so `new Tsum(...)` has a
+// construct signature and `Tsum.prototype` is typed. At an ES5 target it emits
+// the same `var Tsum = (function () { function Tsum(...) {...} return Tsum; }())`
+// shape the hand-written version had, and the field declarations below emit
+// nothing at all.
+class Tsum {
+  debug: boolean;
+  autoLaunch: boolean;
+  isRunning: boolean;
+  isStartupPhase: boolean;
+  runTimes: number;
+  myTsum: string;
+  myTsumColor: Color | null;
+  myTsumIdx: number;
+  storagePath: string;
+  originScreenWidth: number;
+  originScreenHeight: number;
+  screenHeight: number;
+  screenWidth: number;
+  gameOffsetX: number;
+  gameOffsetY: number;
+  gameHeight: number;
+  gameWidth: number;
+  resizeRatio: number;
+  captureGameRatio: number;
+  playOffsetX: number;
+  playOffsetY: number;
+  playHeight: number;
+  playWidth: number;
+  playResizeWidth: number;
+  playResizeHeight: number;
+  tsumCount: number;
+  maxChainsPerScan: number;
+  prioritizeMyTsum: boolean;
+  isJP: boolean;
+  logs: typeof Logs;
+  scoreItem: boolean;
+  coinItem: boolean;
+  expItem: boolean;
+  timeItem: boolean;
+  bubbleItem: boolean;
+  comboItem: boolean;
+  isPause: boolean;
+  receiveOneItem: boolean;
+  sentToZero: boolean;
+  recordReceive: boolean;
+  skillInterval: number;
+  skillLevel: number;
+  /** `SkillType.Unset` until start() reads the setting. */
+  skillType: SkillType;
+  gameBubbles: GameBubble[];
+  skillAutoTap: boolean;
+  skillAutoTapInterval: number;
+  _lastSkillAutoTap: number;
+  overloadPending: boolean;
+  unlockLevelHoursWait: number;
+  sendHearts: boolean;
+  keepRuby: boolean;
+  showHeartLog: boolean;
+  sendHeartMaxDuring: number;
+  useFan: boolean;
+  record: TsumRecord;
+  /** Sender portraits held for matching. `0` is what a failed openImage returns. */
+  recordImages: { [filename: string]: NativeImage | 0 };
+  maxRecordImages: number;
+  receiveCheckLimit: number;
+  clearBubbles: boolean;
+  autobuyBoxes: number;
+  noSkillLastFeverSec: number;
+  claimAllWithoutCoins: boolean;
+  nextMonitorExecution: number;
+  lastVisitedPages: { [pageKey: string]: boolean };
+  _lastProgress: number;
+  _lastSeenCount: number;
+  stuckTimeoutMs: number;
+  handleLongSkillAnimations: boolean;
+  gameOverGraceMs: number;
+  sendHeartsDownwards: boolean;
 
-  this.tsumCount = 5;
-  this.maxChainsPerScan = 6;
-  // Link MyTsum chains ahead of longer ones of other colors, so the skill gauge
-  // fills faster (see calculatePaths). Off by default: it costs raw chain
-  // length, and only pays off when the skill is worth more than the tsums.
-  this.prioritizeMyTsum = false;
-  this.isJP = isJP;
-  this.logs = logs;
-  this.scoreItem = false;
-  this.coinItem = false;
-  this.expItem = false;
-  this.timeItem = false;
-  this.bubbleItem = false;
-  this.comboItem = false;
-  this.isPause = false;
-  this.receiveOneItem = false;
-  this.sentToZero = false;
-  this.recordReceive = true;
-  this.skillInterval = 3000;
-  this.skillLevel = 3;
-  this.skillType = '';
-  // Bubble positions from the last board scan, tapped after a long chain.
-  this.gameBubbles = [];
-  // Optional safety poll: fire the skill the instant it's ready, even mid-link,
-  // rather than only at the end of each board-scan cycle (see maybeAutoTapSkill).
-  this.skillAutoTap = false;
-  this.skillAutoTapInterval = 500;
-  this._lastSkillAutoTap = 0;
-  // Burst-skill overload: set after a link batch so the next scan issues one
-  // carry-over tap on the skill button (see link / scanBoardQuick).
-  this.overloadPending = false;
-  this.unlockLevelHoursWait = 0;
-  this.sendHearts = false;
-  this.keepRuby = false;
-  this.showHeartLog = true;
-  this.sendHeartMaxDuring = 0;
-  this.useFan = true;
-  // record
-  this.record = {
-    hearts_count: {
-      receivedCount: 0,
-      sentCount: 0
-    }
-  };
-  this.recordImages = {};
-  // Cap on sender portraits kept in native memory for matching (the on-disk
-  // PNGs and record.txt stats are unaffected). Unbounded retention grew with
-  // every recorded friend and dragged emulator FPS down over long sessions.
-  this.maxRecordImages = 200;
-  this.receiveCheckLimit = 5;
-  this.clearBubbles = true;
-  this.autobuyBoxes = 0;
-  this.noSkillLastFeverSec = 0;
-  this.claimAllWithoutCoins = false;
-  this.nextMonitorExecution = 0;
-  this.lastVisitedPages = {init1: true, init2: true, init3: true};  // trigger initial monitor call on script startup
-  // Layer 2 watchdog: track when the game last made progress. _lastProgress is
-  // bumped whenever new lastVisitedPages keys appear; if it stalls past the
-  // threshold the watchdog restarts the app.
-  this._lastProgress = Date.now();
-  this._lastSeenCount = 3;  // matches the 3 init keys above
-  this.stuckTimeoutMs = 180 * 1000;
-  // "Handle Long Skill Animations": off means TsumBeta's original game-over
-  // check (one 500ms recheck, then assume the game ended), on means the
-  // positive confirmation in confirmGameOver.
-  this.handleLongSkillAnimations = false;
-  // How long the play loop tolerates an unrecognized screen before accepting
-  // game over (see confirmGameOver). Must outlast the longest burst-skill
-  // animation; a real game over exits earlier via ScorePage detection.
-  this.gameOverGraceMs = 20 * 1000;
-  this.sendHeartsDownwards = true;
-  this.init(detect);
+  // Set by start() immediately after `new Tsum(...)`, before any task runs --
+  // hence the definite-assignment `!` rather than a constructor default.
+  settings!: Settings;
+  bonus5to4!: boolean;
+  receiveSecondItem!: boolean;
+  tsumMonitorUrl!: string;
+  tsumAppRestartFrequency!: number;
+
+  // Lazily initialised caches, owned by dialogs.ts and clickAssist.ts.
+  // The counters are seeded below; `_touchDevice` uses undefined as a third
+  // state ("not looked up yet") distinct from null ("looked up, not found").
+  _uiDumpFailures: number;
+  _lastDebugShot: number;
+  _touchDevice: TouchDevice | null | undefined;
+
+  constructor(isJP: boolean, detect: boolean, logs: typeof Logs) {
+    this.debug = false;
+    this.autoLaunch = false;
+    this.isRunning = true;
+    this.isStartupPhase = true;
+    this.runTimes = 0;
+    this.myTsum = '';
+    this.myTsumColor = null;
+    this.myTsumIdx = -1;
+    this.storagePath = getStoragePath();
+    // screen size config
+    /** @type {{width: number, height: number}}  */
+    const size = getScreenSize();
+    this.originScreenWidth = size.width;
+    this.originScreenHeight = size.height;
+    this.screenHeight = size.height;
+    this.screenWidth = size.width;
+    this.gameOffsetX = 0;
+    this.gameOffsetY = 0;
+    this.gameHeight = 0;
+    this.gameWidth = 0;
+    this.resizeRatio = Math.max(1, this.screenWidth / 360); // normalize page screenshots to 360px width
+    this.captureGameRatio = 0;
+    // playing game screen size config
+    this.playOffsetX = 0;
+    this.playOffsetY = 0;
+    this.playHeight = 0;
+    this.playWidth = 0;
+    this.playResizeWidth = Config.screenResize;
+    this.playResizeHeight = Config.screenResize;
+
+    this.tsumCount = 5;
+    this.maxChainsPerScan = 6;
+    // Link MyTsum chains ahead of longer ones of other colors, so the skill gauge
+    // fills faster (see calculatePaths). Off by default: it costs raw chain
+    // length, and only pays off when the skill is worth more than the tsums.
+    this.prioritizeMyTsum = false;
+    this.isJP = isJP;
+    this.logs = logs;
+    this.scoreItem = false;
+    this.coinItem = false;
+    this.expItem = false;
+    this.timeItem = false;
+    this.bubbleItem = false;
+    this.comboItem = false;
+    this.isPause = false;
+    this.receiveOneItem = false;
+    this.sentToZero = false;
+    this.recordReceive = true;
+    this.skillInterval = 3000;
+    this.skillLevel = 3;
+    this.skillType = SkillType.Unset;
+    // Bubble positions from the last board scan, tapped after a long chain.
+    this.gameBubbles = [];
+    // Optional safety poll: fire the skill the instant it's ready, even mid-link,
+    // rather than only at the end of each board-scan cycle (see maybeAutoTapSkill).
+    this.skillAutoTap = false;
+    this.skillAutoTapInterval = 500;
+    this._lastSkillAutoTap = 0;
+    // Burst-skill overload: set after a link batch so the next scan issues one
+    // carry-over tap on the skill button (see link / scanBoardQuick).
+    this.overloadPending = false;
+    this.unlockLevelHoursWait = 0;
+    this.sendHearts = false;
+    this.keepRuby = false;
+    this.showHeartLog = true;
+    this.sendHeartMaxDuring = 0;
+    this.useFan = true;
+    // record
+    this.record = {
+      hearts_count: {
+        receivedCount: 0,
+        sentCount: 0
+      }
+    };
+    this.recordImages = {};
+    // Cap on sender portraits kept in native memory for matching (the on-disk
+    // PNGs and record.txt stats are unaffected). Unbounded retention grew with
+    // every recorded friend and dragged emulator FPS down over long sessions.
+    this.maxRecordImages = 200;
+    this.receiveCheckLimit = 5;
+    this.clearBubbles = true;
+    this.autobuyBoxes = 0;
+    this.noSkillLastFeverSec = 0;
+    this.claimAllWithoutCoins = false;
+    this.nextMonitorExecution = 0;
+    this.lastVisitedPages = {init1: true, init2: true, init3: true};  // trigger initial monitor call on script startup
+    // Layer 2 watchdog: track when the game last made progress. _lastProgress is
+    // bumped whenever new lastVisitedPages keys appear; if it stalls past the
+    // threshold the watchdog restarts the app.
+    this._lastProgress = Date.now();
+    this._lastSeenCount = 3;  // matches the 3 init keys above
+    this.stuckTimeoutMs = 180 * 1000;
+    // "Handle Long Skill Animations": off means TsumBeta's original game-over
+    // check (one 500ms recheck, then assume the game ended), on means the
+    // positive confirmation in confirmGameOver.
+    this.handleLongSkillAnimations = false;
+    // How long the play loop tolerates an unrecognized screen before accepting
+    // game over (see confirmGameOver). Must outlast the longest burst-skill
+    // animation; a real game over exits earlier via ScorePage detection.
+    this.gameOverGraceMs = 20 * 1000;
+    this.sendHeartsDownwards = true;
+    // Both were previously left undefined and read through `|| 0` guards; seeding
+    // them here is the same value on every read, just stated once.
+    this._uiDumpFailures = 0;
+    this._lastDebugShot = 0;
+    this.init(detect);
+  }
 }
 
 Tsum.prototype.init = function(detect) {
@@ -187,7 +291,7 @@ Tsum.prototype.isAppOn = function() {
   return packageName.indexOf('LGTMTM') !== -1;
 };
 
-function getPackageName(isJP) {
+function getPackageName(isJP: boolean): string {
     let packageName = 'com.linecorp.LGTMTM';
     if (!isJP) {
         packageName += 'G';
@@ -199,7 +303,7 @@ function getPackageName(isJP) {
 // (`am`, `uiautomator`) cannot boot their VM without this prefix.
 const ShellBootClassPath = 'BOOTCLASSPATH=/system/framework/core.jar:/system/framework/conscrypt.jar:/system/framework/okhttp.jar:/system/framework/core-junit.jar:/system/framework/bouncycastle.jar:/system/framework/ext.jar:/system/framework/framework.jar:/system/framework/framework2.jar:/system/framework/telephony-common.jar:/system/framework/voip-common.jar:/system/framework/mms-common.jar:/system/framework/android.policy.jar:/system/framework/services.jar:/system/framework/apache-xml.jar:/system/framework/webviewchromium.jar';
 
-function startTsumTsumApp(isJP) {
+function startTsumTsumApp(isJP: boolean): void {
   const packageName = getPackageName(isJP);
   execute(ShellBootClassPath +
       ' am start --activity-single-top -n ' + packageName + '/com.linecorp.LGTMTM.TsumTsum');
@@ -411,8 +515,10 @@ Tsum.prototype.findPageObject = function(times, timeout) {
     for (let t = 0; t < times; t++) {
       const img = this.screenshot();
       try {
+        // Walks the whole table by key, so it needs the index-signature view of
+        // it rather than the literal type that gives Page.X its click-through.
         for (const key in Page) {
-          page = Page[key];
+          page = (Page as PageMap)[key];
           currentPage = null;
           const pageColors = page.colors || [];
           for (let i = 0; i < pageColors.length; i++) {
@@ -448,6 +554,10 @@ Tsum.prototype.findPageObject = function(times, timeout) {
       return null;
     }
   }
+  // Reached only when isRunning went false mid-scan (the script is stopping).
+  // Previously fell through to `undefined`; every caller tests `!= null`, so
+  // returning null here is the same to all of them and honest about the type.
+  return null;
 }
 
 Tsum.prototype.findPage = function(times, timeout) {
@@ -463,7 +573,7 @@ Tsum.prototype.findPage = function(times, timeout) {
           this.isStartupPhase = false;
     }
   }
-  return page != null ? page.name : 'unknown';
+  return page != null ? page.name : PageName.Unknown;
 }
 
 Tsum.prototype.matchesPage = function (pageName) {
@@ -471,7 +581,7 @@ Tsum.prototype.matchesPage = function (pageName) {
   let img = null;
   try {
     for (const pageId in Page) {
-      const page = Page[pageId];
+      const page = (Page as PageMap)[pageId];
       if (pageName === page.name) {
         if (img == null) {
           // lazy init only if page exists
@@ -506,9 +616,9 @@ Tsum.prototype.exitUnknownPage = function() {
   if (this.dismissSystemDialog()) {
     return;
   }
-  keycode('KEYCODE_DPAD_DOWN', 50);
+  keycode(KeyCode.DpadDown, 50);
   this.sleep(500);
-  keycode('KEYCODE_ENTER', 50);
+  keycode(KeyCode.Enter, 50);
   this.tap(Button.gameQuestionCancel);
   this.tap(Button.gameQuestionCancel2);
   this.tap(Button.outClose);
@@ -527,28 +637,31 @@ Tsum.prototype.goFriendPage = function() {
       this.sleep(5000);
     }
     const pageObj = this.findPageObject(2, 1000);
-    let page = pageObj != null ? pageObj.name : "unknown";
+    // `page` is derived from `pageObj`, so every branch below other than
+    // 'unknown' implies pageObj is non-null -- a correlation the compiler
+    // cannot see, hence the `!`s.
+    let page = pageObj != null ? pageObj.name : PageName.Unknown;
     log(this.logs.currentPage, page, "goFriend");
-    if (page === 'FriendPage') {
+    if (page === PageName.FriendPage) {
       // check again with 3 seoconds delay (Event notification/page might fly in)
       this.sleep(3000);
       page = this.findPage(1, 500);
-      if (page === 'FriendPage') {
+      if (page === PageName.FriendPage) {
         this.sendMoneyInfo();
         this.isStartupPhase = false;
         return;
       }
-    } else if (page === 'RootDetection') {
+    } else if (page === PageName.RootDetection) {
       // Never tap the recorded coordinates blind: they belong to whichever
       // emulator/dpi variant matched, which is not necessarily this device.
-      this.dismissSystemDialog(pageObj.next);
-    } else if (page === "ClosePage") {
-      this.tap(pageObj.back);
+      this.dismissSystemDialog(pageObj!.next);
+    } else if (page === PageName.ClosePage) {
+      this.tap(pageObj!.back);
       this.tap({x: 310, y: 1588 - 140});
-    } else if (page === 'unknown') {
+    } else if (page === PageName.Unknown) {
       this.exitUnknownPage();
     } else {
-      this.tap(pageObj.back);
+      this.tap(pageObj!.back);
     }
     this.checkStall(guard, page);
     this.sleep(1000);
@@ -556,7 +669,8 @@ Tsum.prototype.goFriendPage = function() {
 }
 
 Tsum.prototype.checkGameItem = function() {
-  const isItemsOn = [false, false, false, false, false, false, false];
+  // Same positions as Button.outGameItems; the two tuples share the order.
+  const isItemsOn: GameItemStates = [false, false, false, false, false, false, false];
   if (this.scoreItem) {
     isItemsOn[0] = true;
   }
@@ -617,45 +731,61 @@ Tsum.prototype.goGamePlayingPage = function() {
       this.startApp();
     }
     const pageObj = this.findPageObject(2, 2000);
-    let page = pageObj != null ? pageObj.name : "unknown";
+    // See goFriendPage on the `!`s: a non-'unknown' page implies a non-null
+    // pageObj, which the compiler cannot derive.
+    let page = pageObj != null ? pageObj.name : PageName.Unknown;
     log(this.logs.currentPage, page, "play");
-    if (page === 'RootDetection') {
-      // See goFriendPage: locate the real button instead of trusting the
-      // coordinates of whichever variant matched.
-      this.dismissSystemDialog(pageObj.next);
-      this.sleep(1000);
-    } else if (page === 'FriendPage') {
-      this.tap(pageObj.next);
-      this.sleep(3000);
-      this.lastVisitedPages.gameFriend = true;
-    } else if (page === 'StartPage') {
-      this.sleep(500);
-      this.checkGameItem();
-      this.sendMoneyInfo();
-      this.tap(Button.outStart);
-      this.sleep(5000); // avoid checking items again!
-      this.lastVisitedPages.gameStart = true;
-    } else if (page === 'GamePlaying') {
-      // check again
-      page = this.findPage(1, 500);
-      if (page === 'GamePlaying') {
-        this.isStartupPhase = false;
-        return;
+    switch (page) {
+      case PageName.RootDetection: {
+        this.dismissSystemDialog(pageObj!.next);
+        this.sleep(1000);
+        break;
       }
-    } else if (page === 'GamePause') {
-      this.isStartupPhase = false;
-      this.tap(pageObj.next);
-      this.sleep(500);
-    } else if (page === 'unknown') {
-      this.exitUnknownPage();
-    } else if (page === "ClosePage") {
-      this.tap(Page.ClosePage.back);
-      this.tap({x: 310, y: 1588 - 140});
-      this.sleep(1000);
-    } else {
-      this.tap(pageObj.back);
-      this.sleep(1000);
+      case PageName.FriendPage: {
+        this.tap(pageObj!.next);
+        this.sleep(3000);
+        this.lastVisitedPages.gameFriend = true;
+        break;
+      }
+      case PageName.StartPage: {
+        this.sleep(500);
+        this.checkGameItem();
+        this.sendMoneyInfo();
+        this.tap(Button.outStart);
+        this.sleep(5000); // avoid checking items again!
+        this.lastVisitedPages.gameStart = true;
+        break;
+      }
+      case PageName.GamePlaying: {
+        page = this.findPage(1, 500);
+        if (page === PageName.GamePlaying) {
+          this.isStartupPhase = false;
+          return;
+        }
+        break;
+      }
+      case PageName.GamePause: {
+        this.isStartupPhase = false;
+        this.tap(pageObj!.next);
+        this.sleep(500);
+        break;
+      }
+      case PageName.Unknown: {
+        this.exitUnknownPage();
+        break;
+      }
+      case PageName.ClosePage: {
+        this.tap(Page.ClosePage.back);
+        this.tap({x: 310, y: 1588 - 140});
+        this.sleep(1000);
+        break;
+      }
+      default: {
+        this.tap(pageObj!.back);
+        this.sleep(1000);
+      }
     }
+
     this.checkStall(guard, page);
   }
 }
@@ -672,23 +802,23 @@ Tsum.prototype.goTsumsPage = function() {
       log(this.logs.currentPage, page.name, "goTsumPage");
     if (page === null) {
       this.exitUnknownPage();
-    } else if (page.name === 'TsumsPage') {
+    } else if (page.name === PageName.TsumsPage) {
       // check again
       page = this.findPageObject(1, 500);
-      if (page != null && page.name === 'TsumsPage') {
+      if (page != null && page.name === PageName.TsumsPage) {
         return;
       }
-    } else if (page.name === 'RootDetection') {
+    } else if (page.name === PageName.RootDetection) {
       this.dismissSystemDialog(page.next);
       this.sleep(1000);
     } else if (page.hasOwnProperty('tsums')) {
-      this.tap(page.tsums);
+      this.tap(page.tsums!);  // the hasOwnProperty check above is the guard
       this.sleep(3000);
     } else {
       this.tap(page.back);
       this.sleep(1000);
     }
-    this.checkStall(guard, page === null ? 'unknown' : page.name);
+    this.checkStall(guard, page === null ? PageName.Unknown : page.name);
   }
 }
 
@@ -699,14 +829,17 @@ Tsum.prototype.goTsumTsumStorePage = function() {
     }
     this.goTsumsPage();
     let pageName = "undefined";
-    let page;
+    let page: PageDef | null = null;
     for (let i = 0; i < 3; i++) {
-      this.tap(this.findPageObject().store);
+      // Unguarded on purpose -- this is pre-existing behaviour, and both `!`s
+      // mark a real crash risk: goTsumsPage() above only returns on TsumsPage,
+      // but a page fingerprinted without a `store` anchor would throw here.
+      this.tap(this.findPageObject()!.store!);
       this.sleep(3000);
       page = this.findPageObject(5, 2000);
-      pageName = page != null ? page.name : 'unknown';
+      pageName = page != null ? page.name : PageName.Unknown;
       log("Pg: ", pageName);
-      if (page !== null && page.name === 'TsumTsumStorePage') {
+      if (page !== null && page.name === PageName.TsumTsumStorePage) {
         const img = this.screenshot();
         let nextColor;
         try {
@@ -720,6 +853,7 @@ Tsum.prototype.goTsumTsumStorePage = function() {
     log('Unexpected page found:', page, 'goTsumTsumStorePage');
     return false;
   }
+  return false;  // not running: nothing was opened
 }
 
 Tsum.prototype.clearAllBubbles = function(startDelay, endDelay, fromY, delayBetweenLines) {
@@ -799,7 +933,7 @@ Tsum.prototype.scanBoardQuick = function() {
     // one after a chain is taps only -- no screenshot in the middle of a batch,
     // which would stall the link cadence and the combo timer with it. Bubbles
     // are big and drift slowly, so a position a second old still lands.
-    this.gameBubbles = this.skillType === 'block_tiara_minnie_plus_s'
+    this.gameBubbles = this.skillType === SkillType.TiaraMinniePlus
       ? findGameBubbles(srcImg) : [];
     if (this.debug && this.gameBubbles.length > 0) {
       console.log('[Bubbles] found ' + this.gameBubbles.length);
@@ -854,7 +988,7 @@ Tsum.prototype.scanBoardQuick = function() {
       }
     }
     if (this.debug) {
-      saveImage(srcImg, this.storagePath + "/tmp/" + ts.runTimes + "-boardImg.jpg");
+      saveImage(srcImg, this.storagePath + "/tmp/" + ts!.runTimes + "-boardImg.jpg");
     }
   } finally {
     releaseImage(srcImg);
@@ -888,10 +1022,10 @@ Tsum.prototype.confirmGameOver = function() {
   const deadline = Date.now() + this.gameOverGraceMs;
   while (this.isRunning) {
     const page = this.findPage(1, 1500);
-    if (page === 'GamePlaying' || page === 'GamePause') {
+    if (page === PageName.GamePlaying || page === PageName.GamePause) {
       return false;
     }
-    if (page !== 'unknown') {
+    if (page !== PageName.Unknown) {
       return true;
     }
     if (Date.now() > deadline) {
@@ -975,14 +1109,14 @@ Tsum.prototype.taskPlayGameQuick = function() {
       this.sleep(300);
     }
     while (this.useSkill(board)) {
-      if (this.skillType !== "block_cpt_ly_s") {
+      if (this.skillType !== SkillType.CptLightyear) {
         clearBubbles++;
       }
     }
 
     // double check
     let page = this.findPage(1, 2500);
-    if (page !== 'GamePlaying' && page !== 'GamePause') {
+    if (page !== PageName.GamePlaying && page !== PageName.GamePause) {
       if (this.handleLongSkillAnimations) {
         if (this.confirmGameOver()) {
           log(this.logs.gameOver);
@@ -991,7 +1125,7 @@ Tsum.prototype.taskPlayGameQuick = function() {
       } else {
         this.sleep(500);
         page = this.findPage(1, 2500);
-        if (page !== 'GamePlaying' && page !== 'GamePause') {
+        if (page !== PageName.GamePlaying && page !== PageName.GamePause) {
           log(this.logs.gameOver);
           break;
         }
@@ -1002,7 +1136,7 @@ Tsum.prototype.taskPlayGameQuick = function() {
 }
 
 Tsum.prototype.taskReceiveAllItems = function() {
-  if (this.findPage() === 'GamePause')
+  if (this.findPage() === PageName.GamePause)
     return;
   this.requestTsumMonitor();
   log(this.logs.friendsPage);
@@ -1064,7 +1198,7 @@ Tsum.prototype.readRecord = function() {
   // native memory for the whole session, growing with each recorded friend.
   const names = [];
   for (const filename in this.record) {
-    if (filename !== "hearts_count") {
+    if (filename !== RecordKey.HeartsCount) {
       names.push(filename);
     }
   }
@@ -1173,8 +1307,9 @@ Tsum.prototype.evictOldRecordImages = function() {
     return tb - ta;  // newest first
   });
   for (let i = this.maxRecordImages; i < names.length; i++) {
-    if (this.recordImages[names[i]] !== 0) {
-      releaseImage(this.recordImages[names[i]]);
+    const img = this.recordImages[names[i]];
+    if (img !== 0) {
+      releaseImage(img);
     }
     delete this.recordImages[names[i]];
   }
@@ -1183,8 +1318,9 @@ Tsum.prototype.evictOldRecordImages = function() {
 
 Tsum.prototype.releaseRecord = function() {
   for(const filename in this.recordImages) {
-    if (this.recordImages[filename] !== 0) {
-      releaseImage(this.recordImages[filename]);
+    const img = this.recordImages[filename];
+    if (img !== 0) {
+      releaseImage(img);
     }
   }
   this.record = {};
@@ -1200,7 +1336,7 @@ Tsum.prototype.skipAd = function () {
   this.tap(Button.outReceiveOne);
   this.sleep(1000);
   // also gets called for skill and premium tickets, so check we really have an ad!!!
-  if (this.matchesPage('ReceiveSkillTicket') || this.matchesPage('ReceivePremiumTicket')) {
+  if (this.matchesPage(PageName.ReceiveSkillTicket) || this.matchesPage(PageName.ReceivePremiumTicket)) {
     // mcs: I improved ad detection here because I don't get ad mails. So I cannot improve detection in list view
     log("Receive ticket");
     this.tap(Button.outReceiveOk);
@@ -1225,7 +1361,7 @@ Tsum.prototype.skipAd = function () {
 }
 
 Tsum.prototype.taskReceiveOneItem = function() {
-  if (this.findPage() === 'GamePause')
+  if (this.findPage() === PageName.GamePause)
     return;
   log(this.logs.friendsPage);
   this.goFriendPage();
@@ -1257,7 +1393,7 @@ Tsum.prototype.taskReceiveOneItem = function() {
       isOk = isSameColor(Button.outReceiveOk.color, this.getColor(img, Button.outReceiveOk), 35);
       isOk2 = isSameColor(Button.outReceiveItemSetOk.color, this.getColor(img, Button.outReceiveItemSetOk), 35);
       isTimeout = isSameColor(Button.outReceiveTimeout.color, this.getColor(img, Button.outReceiveTimeout), 35);
-      isHeartWithoutCoins = this.matchesPage('ReceiveHeartWithoutCoins');
+      isHeartWithoutCoins = this.matchesPage(PageName.ReceiveHeartWithoutCoins);
       debug({
         isItem: isItem, isRuby: isRuby, isNonItem: isNonItem, isAd: isAd, isOk: isOk,
         isTimeout: isTimeout, timeoutCounter: timeoutCounter
@@ -1339,7 +1475,7 @@ Tsum.prototype.taskReceiveOneItem = function() {
         this.tap(Button.outReceiveItemSetOk);
       }
       if (sender !== undefined) {
-        this.record['hearts_count'].receivedCount++;
+        this.record[RecordKey.HeartsCount]!.receivedCount++;
         receivedCount++;
       }
       sender = undefined;
@@ -1386,7 +1522,7 @@ Tsum.prototype.taskReceiveOneItem = function() {
     log("I'm stuck! Trying exit...");
     this.exitUnknownPage();
     this.sleep(1000);
-    if (this.findPage() === 'unknown') {
+    if (this.findPage() === PageName.Unknown) {
       // last attempt
       log("Still stuck! Last try...");
       this.exitUnknownPage();
@@ -1412,7 +1548,8 @@ Tsum.prototype.doHeartSending = function(startTime) {
   const hty = Button.outSendHeartTo.y + 30;   // hearts to y
   let finished;
 
-  function scrollToNextHearts() {
+  // Called with `.call(this)`, so `this` is the live Tsum instance.
+  function scrollToNextHearts(this: Tsum) {
     if (this.sendHeartsDownwards) {
       this.tapDown({x: Button.outSendHeart3.x - 10, y: Button.outSendHeart3.y}, 50);
       this.moveTo({x: Button.outSendHeart3.x - 10, y: Button.outSendHeart3.y}, 50);
@@ -1441,7 +1578,7 @@ Tsum.prototype.doHeartSending = function(startTime) {
       this.lastVisitedPages.friends = true;
       debug("Ensured friends page");
     }
-    const heartsPos = [];
+    const heartsPos: HeartButton[] = [];
 
     const img = this.screenshot();
     // Declared outside the try so the end/zero/top checks below can read them
@@ -1514,7 +1651,7 @@ Tsum.prototype.doHeartSending = function(startTime) {
         }
         if (success) {
           rTimes++;
-          this.record['hearts_count'].sentCount++;
+          this.record[RecordKey.HeartsCount]!.sentCount++;
           this.lastVisitedPages.sendHeartSuccess = true;
         } else {
           debug("Try return to FriendPage");
@@ -1553,7 +1690,7 @@ Tsum.prototype.doHeartSending = function(startTime) {
 
 Tsum.prototype.taskSendHearts = function() {
   debug("Started taskSendHearts");
-  if (this.findPage() === 'GamePause')
+  if (this.findPage() === PageName.GamePause)
     return;
   log(this.logs.friendsPage);
   this.goFriendPage();
@@ -1580,7 +1717,7 @@ Tsum.prototype.taskSendHearts = function() {
 }
 
 Tsum.prototype.taskAutoUnlockLevel = function() {
-  if (this.findPage() === 'GamePause')
+  if (this.findPage() === PageName.GamePause)
     return;
   let btn;
   let i;
@@ -1704,7 +1841,7 @@ Tsum.prototype.taskAutoUnlockLevel = function() {
 }
 
 Tsum.prototype.taskAutoBuyBoxes = function() {
-  if (this.findPage() === 'GamePause')
+  if (this.findPage() === PageName.GamePause)
     return;
   log("Starting taskAutoBuyBoxes");
   if (this.autobuyBoxes === 0) {
@@ -1727,12 +1864,12 @@ Tsum.prototype.taskAutoBuyBoxes = function() {
     if (page != null) {
       countUnknownPages = 0;
       this.lastVisitedPages['autoBuyBoxes' + page.name] = true;
-      if (page.name === "OutOfMedals") {
+      if (page.name === PageName.OutOfMedals) {
         log("Out Of Medals");
         this.autobuyBoxes = 0;
         break;
       }
-      if (page.name === "TsumTsumStorePage") {
+      if (page.name === PageName.TsumTsumStorePage) {
         if (page !== lastPage) {
           this.autobuyBoxes--;
           log("Bought box.", this.autobuyBoxes, "left");
@@ -1751,9 +1888,16 @@ Tsum.prototype.taskAutoBuyBoxes = function() {
         }
         if (!isSameColor(page.next, nextColor, 50)) {
           // wait and test again
+          //
+          // LATENT: this re-read can return null (nothing recognised within the
+          // 200ms budget) and is dereferenced unchecked, both here and at the
+          // `this.tap(page.next)` below -- a TypeError the task controller
+          // swallows as one more error towards its restart threshold. The `!`
+          // preserves that existing behaviour rather than quietly adding a
+          // guard; see the note in DEVELOPMENT.md.
           this.sleep(500);
-          page = this.findPageObject(1, 200);
-          if (page.name === "TsumTsumStorePage" && !isSameColor(page.next, nextColor, 50)) {
+          page = this.findPageObject(1, 200)!;
+          if (page.name === PageName.TsumTsumStorePage && !isSameColor(page.next, nextColor, 50)) {
             log("Finish with", this.autobuyBoxes, "boxes zu buy due to empty box");
             break;
           }
@@ -1783,8 +1927,9 @@ Tsum.prototype.taskAutoBuyBoxes = function() {
         this.autobuyBoxes = 0;
       } else if (page.name === Page.MailBox.name) {   // matches when "Buy coins for rubies" appears
         // test again, sometimes falsely matched while page transition
+        // (same unchecked re-read as above)
         this.sleep(500);
-        page = this.findPageObject(1, 200);
+        page = this.findPageObject(1, 200)!;
         if (page.name === Page.MailBox.name) {
           log("Not enough coins.");
           this.autobuyBoxes = 0;
@@ -1878,7 +2023,7 @@ Tsum.prototype.sendHeart = function(btn) {
   // log("sendHeart");
   while (this.isRunning) {
     const page = this.findPage(1, 300);
-    if (page === "FriendPage") {
+    if (page === PageName.FriendPage) {
       // log("sendHeart A", Date.now() / 1000);
       const img = this.screenshot();
       let isSendBtn, isSentBtn;
@@ -1895,12 +2040,12 @@ Tsum.prototype.sendHeart = function(btn) {
         debug("sendHeart A-B", Date.now() / 1000);
         unknownCount += 1;
       }
-    } else if (page === "GiftHeart") {
+    } else if (page === PageName.GiftHeart) {
       this.lastVisitedPages.sendHeartGiftHeart = true;
       this.tap(Button.outReceiveOk);
       isGift = true;
       debug("sendHeart B", Date.now() / 1000);
-    } else if (page === "Received") {
+    } else if (page === PageName.Received) {
       this.lastVisitedPages.sendHeartReceived = true;
       this.sleep(100);
       this.tap(Button.outSendHeartClose);
@@ -1911,9 +2056,9 @@ Tsum.prototype.sendHeart = function(btn) {
         this.sleep(100);
         return true;
       }
-    } else if (page === "FriendInfo") {
+    } else if (page === PageName.FriendInfo) {
       this.tap(Page.FriendInfo.back);
-    } else if (page === "ClosePage") {
+    } else if (page === PageName.ClosePage) {
       this.tap(Page.ClosePage.back);
       this.tap({x: 310, y: 1588 - 140});
     } else {
@@ -1925,6 +2070,7 @@ Tsum.prototype.sendHeart = function(btn) {
     }
     // this.sleep(150);
   }
+  return false;  // not running: the heart was not sent
 }
 
 Tsum.prototype.sleep = function(t) {
@@ -1944,7 +2090,8 @@ Tsum.prototype.sleep = function(t) {
 }
 
 Tsum.prototype.isOnScreenshot = function(img, pageObject, colorDiff) {
-  return pageObject && pageObject.color && isSameColor(pageObject.color, this.getColor(img, pageObject), colorDiff)
+  return !!(pageObject && pageObject.color
+      && isSameColor(pageObject.color, this.getColor(img, pageObject), colorDiff))
 }
 
 

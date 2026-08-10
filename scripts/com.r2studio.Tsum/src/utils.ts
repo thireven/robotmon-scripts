@@ -1,15 +1,26 @@
 // Utils
+
+/**
+ * Per-channel distance. A missing channel yields NaN, which is deliberate and
+ * relied upon by both callers below -- see the note on `ColorLike`. The `!`s
+ * say "undefined is possible here and NaN is the intended result", not "this
+ * can never be undefined".
+ */
+function channelDiff(a: number | undefined, b: number | undefined): number {
+  return Math.abs(a! - b!);
+}
+
 function isSameColor(c1: ColorLike, c2: ColorLike, diff?: number): boolean {
   if (diff === undefined) {
     diff = 20;
   }
-  return Math.abs(c1.r - c2.r) <= diff
-      && Math.abs(c1.g - c2.g) <= diff
-      && Math.abs(c1.b - c2.b) <= diff;
+  return channelDiff(c1.r, c2.r) <= diff
+      && channelDiff(c1.g, c2.g) <= diff
+      && channelDiff(c1.b, c2.b) <= diff;
 }
 
 function absColor(c1: ColorLike, c2: ColorLike): number {
-  return Math.abs(c1.r - c2.r) + Math.abs(c1.g - c2.g) + Math.abs(c1.b - c2.b);
+  return channelDiff(c1.r, c2.r) + channelDiff(c1.g, c2.g) + channelDiff(c1.b, c2.b);
 }
 
 function nowTime(): number {
@@ -17,21 +28,26 @@ function nowTime(): number {
   return Date.now() + offset;
 }
 
-function debug() {
+/**
+ * A message part: anything printable. A function is a thunk that is only called
+ * -- and so only pays for whatever it computes -- when debug logs are on.
+ */
+type LogPart = any;
+
+function debug(...parts: LogPart[]): void {
   if (Config.debugLogs) {
-    const argsArray = Array.prototype.slice.call(arguments);
-    const newArgs = ['*DEBUG*'].concat(argsArray);
-    log.apply(null, newArgs);
+    const newArgs: LogPart[] = ['*DEBUG*'];
+    log.apply(null, newArgs.concat(parts));
   }
 }
 
-function log() {
+function log(...parts: LogPart[]): void {
   sleep(10);
-  const args = [];
-  if (ts !== undefined && ts.showHeartLog && ts.record && ts.record['hearts_count']) {
+  const args: LogPart[] = [];
+  if (ts !== undefined && ts.showHeartLog && ts.record && ts.record[RecordKey.HeartsCount]) {
     let msg = "";
-    msg += "R:"+ts.record['hearts_count'].receivedCount+" ";
-    msg += "S:"+ts.record['hearts_count'].sentCount;
+    msg += "R:"+ts.record[RecordKey.HeartsCount]!.receivedCount+" ";
+    msg += "S:"+ts.record[RecordKey.HeartsCount]!.sentCount;
     if (gTaskController !== undefined && gTaskController.tasks !== undefined) {
       const sendTask = gTaskController.tasks["sendHearts"];
       if (sendTask !== undefined) {
@@ -45,16 +61,17 @@ function log() {
     }
     args.push("["+msg+"]");
   }
-  for (let i = 0; i < arguments.length; i++) {
-    if (typeof arguments[i] == 'object') {
-      arguments[i] = JSON.stringify(arguments[i], null, 2);
-    } else if (typeof arguments[i] == 'function') {
+  for (let i = 0; i < parts.length; i++) {
+    let part = parts[i];
+    if (typeof part == 'object') {
+      part = JSON.stringify(part, null, 2);
+    } else if (typeof part == 'function') {
       if (Config.debugLogs)
-        arguments[i] = arguments[i]();
+        part = part();
       else
-        arguments[i] = "";
+        part = "";
     }
-    args.push(arguments[i]);
+    args.push(part);
   }
   console.log.apply(console, args);
 }

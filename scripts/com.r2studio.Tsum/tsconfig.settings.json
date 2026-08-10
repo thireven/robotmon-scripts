@@ -11,14 +11,20 @@
     "rootDir": "./src",
     "removeComments": false,
     "newLine": "lf",
+    // Not `strict` yet: settings.ts is a direct port of the original
+    // settings.js and still leans on implicit any in its jQuery rendering. The
+    // checks below are the ones it does pass, and they are what catch a
+    // mistyped Settings key -- the failure that actually costs anything here.
     "strict": false,
-    "noImplicitAny": false,
-    "noImplicitThis": false,
+    "noImplicitThis": true,
+    "strictNullChecks": true,
     "skipLibCheck": true,
     "noEmitOnError": false,
     "ignoreDeprecations": "6.0"
   },
   "files": [
+    "src/shared.d.ts",
+    "src/settings.d.ts",
     "src/settings.ts"
   ]
 }

@@ -10,7 +10,7 @@
 var CabbageMickeyFaceColor = {r: 245, g: 225, b: 210};
 
 registerSkill({
-  types: ['block_cabbage_mickey_s'],
+  types: [SkillType.CabbageMickey],
   afterActivate: function(ts) {
     // wait for all cabbages being placed
     ts.sleep(3300);

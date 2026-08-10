@@ -5,7 +5,7 @@
 // the playResize space linkTsums draws in, not screen pixels.
 
 Tsum.prototype.useCinderellaSkill = function() {
-  let path, offset, y;
+  let path: Point[], offset: number, y: number;
   for (let i = 0; i < 5; i += 1) {
     for (offset = 0; offset <= 200; offset += 200) {
       path = [];
@@ -30,9 +30,12 @@ Tsum.prototype.useCinderellaSkill = function() {
 }
 
 registerSkill({
-  types: ['block_cinderella_s'],
-  afterActivate: function(ts, board) {
+  types: [SkillType.Cinderella],
+  afterActivate: function(ts) {
     ts.sleep(1500);
-    ts.useCinderellaSkill(board);
+    // Takes no argument: the sweep is a fixed serpentine over the whole play
+    // area, not something aimed at the scanned board. (It was being passed
+    // `board`, which the function has never had a parameter for.)
+    ts.useCinderellaSkill();
   }
 });

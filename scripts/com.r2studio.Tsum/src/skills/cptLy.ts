@@ -30,7 +30,7 @@ Tsum.prototype.useCptLySkill = function() {
 };
 
 registerSkill({
-  types: ['block_cpt_ly_s'],
+  types: [SkillType.CptLightyear],
   afterActivate: function(ts) {
     ts.useCptLySkill();
   }

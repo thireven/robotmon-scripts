@@ -2,7 +2,7 @@
 // be popped by hand. Same animation length for all three, so one sweep serves.
 
 registerSkill({
-  types: ['block_marie_s', 'block_missbunny_s', 'block_rabbit_s'],
+  types: [SkillType.Marie, SkillType.MissBunny, SkillType.Rabbit],
   afterActivate: function(ts) {
     ts.clearAllBubbles(2000, 50);
   }
