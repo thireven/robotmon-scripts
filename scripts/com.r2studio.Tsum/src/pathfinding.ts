@@ -6,8 +6,9 @@ function usingTimeString(startTime: number): number {
 
 /** Squared distance -- the callers only ever compare it, so the sqrt is skipped. */
 function getDistance(t1: Point, t2: Point): number {
-  //return Math.sqrt((t1.x - t2.x) * (t1.x - t2.x) + (t1.y - t2.y) * (t1.y - t2.y));
-  return (t1.x - t2.x) * (t1.x - t2.x) + (t1.y - t2.y) * (t1.y - t2.y);
+  const dx = t1.x - t2.x;
+  const dy = t1.y - t2.y;
+  return dx * dx + dy * dy;
 }
 
 /**

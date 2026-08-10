@@ -473,7 +473,8 @@ Tsum.prototype.link = function(paths, board) {
   // Choreographed skills can't ride blind taps (activating without the
   // follow-up aiming wastes the skill) and go through maybeAutoTapSkill,
   // which verifies readiness before handing over to useSkill.
-  const blindTap = skillBareTapActivates(this.skillType);
+  // TODO: Revisit this after refactor merge
+  // const blindTap = skillBareTapActivates(this.skillType);
   for (const i in paths) {
     const path = paths[i];
     // >= 7 should be correct, but practically the real chain is always shorter
@@ -487,21 +488,25 @@ Tsum.prototype.link = function(paths, board) {
     if (path.length >= GameBubbleConfig.minChainForPop) {
       this.popGameBubbles();
     }
-    if (blindTap) {
-      this.tap(Button.gameSkill1, 10);
-    } else {
-      // Linking a full batch of chains can take several seconds; check between
-      // chains so a gauge that fills mid-batch fires right away.
-      this.maybeAutoTapSkill(board);
-    }
+    // if (blindTap) {
+    //   this.tap(Button.gameSkill1, 10);
+    // } else {
+    //   // Linking a full batch of chains can take several seconds; check between
+    //   // chains so a gauge that fills mid-batch fires right away.
+    //   this.maybeAutoTapSkill(board);
+    // }
+
+    // Linking a full batch of chains can take several seconds; check between
+    // chains so a gauge that fills mid-batch fires right away.
+    this.maybeAutoTapSkill(board);
   }
-  if (blindTap && paths.length > 0) {
-    // The last chains' count-in lands after the batch: one spaced tail tap
-    // now, one more after the next scan's capture (overloadPending).
-    this.sleep(60);
-    this.tap(Button.gameSkill1, 10);
-    this.overloadPending = true;
-  }
+  // if (blindTap && paths.length > 0) {
+  //   // The last chains' count-in lands after the batch: one spaced tail tap
+  //   // now, one more after the next scan's capture (overloadPending).
+  //   this.sleep(60);
+  //   this.tap(Button.gameSkill1, 10);
+  //   this.overloadPending = true;
+  // }
   return isBubble;
 }
 
@@ -933,8 +938,7 @@ Tsum.prototype.scanBoardQuick = function() {
     // one after a chain is taps only -- no screenshot in the middle of a batch,
     // which would stall the link cadence and the combo timer with it. Bubbles
     // are big and drift slowly, so a position a second old still lands.
-    this.gameBubbles = this.skillType === SkillType.TiaraMinniePlus
-      ? findGameBubbles(srcImg) : [];
+    this.gameBubbles = findGameBubbles(srcImg);
     if (this.debug && this.gameBubbles.length > 0) {
       console.log('[Bubbles] found ' + this.gameBubbles.length);
     }
